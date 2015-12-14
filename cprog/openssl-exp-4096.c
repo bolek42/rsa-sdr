@@ -11,14 +11,13 @@ int main(int argc, char **argv)
     BN_CTX *ctx = BN_CTX_new();
     BIGNUM *res = BN_new();
     BIGNUM *arg = BN_a2bn( argv[1]);
-    BIGNUM *rand = BN_a2bn( rand_2048);
-    BIGNUM *deadbeef = BN_a2bn( deadbeef_2048);
+    BIGNUM *rand = BN_a2bn( rand_4096);
+    BIGNUM *deadbeef = BN_a2bn( deadbeef_4096);
 
     //Dummyoperationen
     for ( i=0; i < N; i++) i ^= 0;
 
     //res = arg ^ rand  mod deadbeef
-    //BN_mod_exp_simple(res, arg, rand, deadbeef, ctx);
     BN_mod_exp(res, arg, rand, deadbeef, ctx);
 
     //Dummyoperationen

@@ -18,8 +18,8 @@ int main(int argc, char **argv)
     for ( i=0; i < N; i++) i ^= 0;
 
     //res = arg ^ rand  mod deadbeef
-    //BN_mod_exp_simple(res, arg, rand, deadbeef, ctx);
-    BN_mod_exp(res, arg, rand, deadbeef, ctx);
+    BN_mod_exp_simple(res, arg, rand, deadbeef, ctx);
+    //BN_mod_exp(res, arg, rand, deadbeef, ctx);
 
     //Dummyoperationen
     for ( i=0; i < N; i++) i^= 0;
