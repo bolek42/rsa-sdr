@@ -1,4 +1,4 @@
-CC=colorgcc -ggdb -O0 
+CC=gcc -ggdb -O0 
 
 all:
 	$(CC) -o openssl-mul openssl-mul.c -lcrypto

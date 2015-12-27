@@ -20,9 +20,11 @@ def n2hex(n, length=512):
 VALUES = {  "./cprog/openssl-mul-4096":
                 #[ n2hex(getrandbits(4095)), n2hex(getrandbits(4095))],
                 [ n2hex(getrandbits(4095)), n2hex(2**4094+2**4094+2**4000)],
+
             "./cprog/openssl-mul":
                 #[ n2hex(getrandbits(2047)), n2hex(getrandbits(2047))],
-                #[ n2hex(getrandbits(2047)), n2hex(2**2047+2**2046)],
+                [ n2hex(getrandbits(2047)), n2hex(2**2047+2**2046)],
+
             "./cprog/openssl-mul-mont":
                 #[ n2hex(2**2047+2**2045), n2hex(2**2047+2**2046)],
                 [ n2hex(2**2047+2**2046+2**2045), n2hex(2**2047+2**2046)],
@@ -97,7 +99,7 @@ class dut_service():
 
     def apply_config(self):
         config_reload()
-        self.port = config_get("dut.port", int)
+        self.port = config_get("misc.port", int)
 
     def run(self):
         while True:

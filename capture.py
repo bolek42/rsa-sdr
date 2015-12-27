@@ -75,7 +75,6 @@ class capture:
         #demod
         self.demod_select = config_get("demod.select", list)
         self.demod_frequency = config_get("demod.frequency", int)
-        self.demod_lowpass = config_get("demod.lowpass", int)
         self.demod_bandpass_low = config_get("demod.bandpass_low", int)
         self.demod_bandpass_high = config_get("demod.bandpass_high", int)
         self.demod_decimation = config_get("demod.decimation", int)
@@ -132,13 +131,13 @@ class capture:
         tb.set_samp_rate(self.capture_samp_rate)
         tb.set_gain(self.capture_gain)
         tb.set_trigger_frequency(self.trigger_frequency)
+        tb.set_trigger_low_pass(self.trigger_low_pass)
 
         tb.set_selector_1_input(self.demod_select[0])
         tb.set_selector_2_input(self.demod_select[1])
         tb.set_selector_3_input(self.demod_select[2])
 
         tb.set_demod_frequency(self.demod_frequency)
-        tb.set_demod_lowpass(self.demod_lowpass)
         tb.set_demod_decimation(self.demod_decimation)
         tb.set_demod_bandpass_high(self.demod_bandpass_high)
         tb.set_demod_bandpass_low(self.demod_bandpass_low)
