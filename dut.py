@@ -17,6 +17,7 @@ def n2hex(n, length=512):
     res = ("0"*(length - len(res))) + res
     return res
 
+# Database of known (and allowed) test programs including some DPA testcases
 VALUES = {  "./cprog/openssl-mul-4096":
                 #[ n2hex(getrandbits(4095)), n2hex(getrandbits(4095))],
                 [ n2hex(getrandbits(4095)), n2hex(2**4094+2**4094+2**4000)],
@@ -60,6 +61,7 @@ VALUES = {  "./cprog/openssl-mul-4096":
                     n2hex(2**4095)]
         }
 
+# DUT client
 class dut():
     def __init__(self):
         self.apply_config()
@@ -86,6 +88,7 @@ class dut():
         self.s.send("%s %s" % (self.cmd, str(challenge)))
         response = self.s.recv(1024)
 
+# the DUT daemon class
 class dut_service():
     def __init__(self):
         self.apply_config()

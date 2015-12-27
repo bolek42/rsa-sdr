@@ -1,5 +1,4 @@
 import os
-import Gnuplot, Gnuplot.funcutils
 import traceback
 import sys
 
@@ -30,11 +29,13 @@ class dpa:
         if np.isinf(trace).any():
             trace[np.isinf(trace)] = np.nan
 
+        #add new group
         if group not in self.sigma:
             self.sigma[group] = np.zeros(trace.shape)
             self.n[group] = np.zeros(trace.shape)
             self.error[group] = []
 
+        #add trace to group
         sigma = self.sigma[group]
         if sigma.shape == trace.shape:
             nan = np.isnan(trace)
@@ -43,7 +44,7 @@ class dpa:
         else:
             print "dpa error: trace has invalid shape"
 
-    # Bestimme den Mittelwert einer Grupper
+    # calculate mean for group
     def mean(self, group, cache_error=10):
         if group not in self.sigma:
             return None
@@ -54,7 +55,7 @@ class dpa:
 
         return m
 
-    # Bestimme die DPA differenz: E(A)-E(B)
+    # compute the DPA difference E(A)-E(B)
     def dpa(self, A, B, verbose=True):
         if A not in self.sigma or B not in self.sigma:
             print "dpa error: invalid group"
@@ -79,8 +80,8 @@ class dpa:
 
         return d
 
-    def oracle(self, runs=10000, values=None, verbose=True, reference=None, mask=None, max_trace=0, count=30):
-            
+    #this methods captures multiple traces and returns the DPA anlysis for the given Values
+    def oracle(self, runs=3000, values=None, verbose=True, reference=None, max_trace=0, count=30):
 
         #perform dpa attack for values
         dp = None
@@ -90,16 +91,15 @@ class dpa:
             # DPA #
             val = None
             try:
-                #Capture traces
                 res = []
                 while len(res) == 0:
-                    # Maximale Anzahl der Messungen pro gruppe
+                    # capturing only max_trace traces per group
                     if values is not None:
                         val = filter( lambda v:   max_trace == 0 or
                                                 v not in self.n or 
                                                 max_trace > self.n[v].max(),
                                                 values)
-                        # finished, return
+                        # no values left => return
                         if len(val) == 0:
                             dp = self.dpa(a,b)
                             #self.reset()
@@ -125,7 +125,7 @@ class dpa:
             except Exception as e:
                 print traceback.format_exc()
 
-            # Zeige das aktuelle DPA
+            # show current DPA
             if i % 1 == 0:
                 try:
                     if values is None:
@@ -154,24 +154,10 @@ class dpa:
 
         self.reset()
         return np.min(dp), np.max(dp)
-        return dp
 
-    def get_refernece(self):
-        while True:
-            trace = None
-            while trace is None:
-                challenge,trace = self.cap.capture()
-            detected_interupts, s = self.preprocess(trace)
-
-            plot(s,blocking=False)
-            if raw_input("Use as Reference?") in ["y","Y"]:
-                return s
-        
 
 if __name__ == "__main__":
     dpa = dpa()
-    mask = None
-    #mask = dpa.mask(0.05, 0.02, 0.05, 0.05) #DC
-    p,n = dpa.oracle(runs=10000, mask=mask)#,reference=dpa.get_refernece())
+    p,n = dpa.oracle()
     print "min: %f\t max: %f" % (p,n)
     raw_input("press return to exit")

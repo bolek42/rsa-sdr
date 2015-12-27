@@ -55,6 +55,7 @@ class capture:
             except:
                 pass
 
+    #load config from file
     def config_reload(self):
         config_reload()
         #config
@@ -99,8 +100,7 @@ class capture:
         elif self.demod_select[0] == 3:
             self.frequency = 0
 
-        
-
+    #configure the top_block
     def restart_tb(self):
         if self.tb is not None:
             log.debug( "stop top_block")
@@ -165,7 +165,7 @@ class capture:
             queue.put( (t,d))
 
     def capture(self, values=None, debug=False, count=10, delay=0.2):
-        # Offline Traces XXX
+        # TODO Offline Traces (currently disabled)
         if self.offline:
             cfile = self.files.pop()
             trace = load(cfile)
@@ -175,12 +175,10 @@ class capture:
                 print "callenge: %s" % challenge
             return challenge,trace
 
-        # Messung mittels SDR
         else:
-
-            #actually performing rsa computation
+            #performing count executions
             log.debug( "challenge")
-            #flush data from queu
+            #flush data from recv. queue
             while self.queue.qsize() > 0: self.queue.get()
 
             #trigger count challenge executions
@@ -188,6 +186,7 @@ class capture:
             for i in xrange(count):
                 start = time.time()
 
+                #perform one execution
                 challenge = choice(self.dut.values) if values is None else choice(values)
                 challenge = self.dut.values[i%len(self.dut.values)] if values is None else values[i%len(values)]
                 if debug:
@@ -199,7 +198,7 @@ class capture:
 
             log.debug( "response")
 
-            #get data from queue
+            #get samples from queue
             t = count * self.trigger_delay + 0.3 #timespan of interest
             trig = ""
             demod = ""
@@ -232,6 +231,7 @@ class capture:
 
         return zip(challenges, traces)
 
+    #use trigger signal to extract executions from trace
     def extract( self, demod, trig, count, delay, debug=False):
         threshold = trig.mean()
         trig_decimation = 100
