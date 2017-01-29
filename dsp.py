@@ -53,8 +53,8 @@ def plot(   data,
             png="/tmp/plot.png",
             npy="/tmp/plot",
             title="",
-            xlabel="Time in ms",
-            ylabel="Frequency in MHz",
+            xlabel="Frequency in MHz",
+            ylabel="Time in ms",
             color='k'):
 
     #arch show thread hack
@@ -76,24 +76,15 @@ def plot(   data,
     plt.ylabel(ylabel)
 
     #1D Graphs
-#    if len(data.shape) == 1:
-#        if samp_rate > 1:
-#            x = np.arange(0,len(data)/float(samp_rate), 1.0/samp_rate)
-#            x *= 1e3
-#            x = x[:len(data)]
-#            plt.plot(x, data)
-#        else:
-#            plt.plot(data)
-
     if len(data.shape) == 1:
         if samp_rate > 1:
-            x = np.arange((f0 - samp_rate/2)/1e6,(f0 + samp_rate/2)/1e6, samp_rate/len(data)/1e6)
-            #x *= 1e3
+            if f0 > 0:
+                x = np.arange((f0 - samp_rate/2)/1e6,(f0 + samp_rate/2)/1e6, samp_rate/len(data)/1e6)
+            else:
+                x = np.arange(0,len(data))
             x = x[:len(data)]
             plt.plot(x, data, color=color)
 
-            xlabel="Frequency in MHz"
-            ylabel="DPA"
             plt.xlabel(xlabel)
             plt.ylabel(ylabel)
         else:
@@ -101,15 +92,14 @@ def plot(   data,
 
     # 2D Plots (stft)
     elif len(data.shape) == 2:
-        xlabel="Frequency in MHz"
-        ylabel="Time in ms"
-        #if f0 > 0:
-        extent = [  (f0 - samp_rate/2)/1e6,
-                    (f0 + samp_rate/2)/1e6,
-                    1e3 * len(data) * float(fft_step) / samp_rate,
-                    0]
-        print extent
-        im = plt.imshow(data,interpolation='bilinear', extent=extent, aspect='auto')
+        if f0 > 0:
+            extent = [  (f0 - samp_rate/2)/1e6,
+                        (f0 + samp_rate/2)/1e6,
+                        1e3 * len(data) * float(fft_step) / samp_rate,
+                        0]
+            im = plt.imshow(data,interpolation='bilinear', extent=extent, aspect='auto')
+        else:
+            im = plt.imshow(data,interpolation='bilinear', aspect='auto')
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.colorbar(im)
@@ -128,43 +118,6 @@ def plot(   data,
     else:
         p = Process(target=plt.show,args=(True,))
         p.start()
-
-## graphing data
-#def plot(   data,
-#            samp_rate=1,
-#            fft_step=1,
-#            f0=0,
-#            blocking=True,
-#            clear=True,
-#            png="/tmp/plot.png",
-#            npy="/tmp/plot",
-#            title="",
-#            xlabel="Time in ms",
-#            ylabel="Frequency in MHz"):
-#    #global p
-#    #if p is not None:
-#    #    p.terminate()
-#    #    p.join()
-#
-#    args = {    "data" : data,
-#                "samp_rate" : samp_rate,
-#                "fft_step" : fft_step,
-#                "f0" : f0,
-#                "blocking" : blocking,
-#                "clear" : clear,
-#                "png" : png,
-#                "npy" : npy,
-#                "title" : title,
-#                "xlabel" : xlabel,
-#                "ylabel" : ylabel}
-#
-#    p = Process(target=plot_thread, kwargs=args)
-#    p.start()
-#
-#    if blocking:
-#        raw_input("press return to continue")
-
-
 
 p = None
 plt.ion()

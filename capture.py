@@ -70,8 +70,6 @@ class capture:
         self.trigger_low_pass = config_get("trigger.low_pass", int)
         self.trigger_frequency = config_get("trigger.frequency", int)
         self.trigger_delay = config_get("trigger.delay", float)
-        self.trigger_pre = config_get("trigger.pre", float)
-        self.trigger_post = config_get("trigger.post", float)
 
         #demod
         self.demod_select = config_get("demod.select", list)
@@ -86,9 +84,6 @@ class capture:
         self.fft_len =  config_get("preprocess.fft_len", int)
         self.fft_step =  config_get("preprocess.fft_step", int)
 
-        self.samp_rate = self.capture_samp_rate / self.demod_decimation
-        self.demod_bandpass_high = min(self.samp_rate / 2,  self.demod_bandpass_high)
-
         if self.demod_select[0] == 0:
             self.demod_decimation = 1
             self.frequency = self.capture_frequency
@@ -99,6 +94,10 @@ class capture:
             self.frequency = self.trigger_frequency
         elif self.demod_select[0] == 3:
             self.frequency = 0
+
+        self.samp_rate = self.capture_samp_rate / self.demod_decimation
+        self.demod_bandpass_high = min(self.samp_rate / 2,  self.demod_bandpass_high)
+
 
     #configure the top_block
     def restart_tb(self):
@@ -183,6 +182,7 @@ class capture:
 
             #trigger count challenge executions
             challenges = []
+            time.sleep(self.trigger_delay)
             for i in xrange(count):
                 start = time.time()
 
@@ -193,7 +193,7 @@ class capture:
                     print "callenge: %s" % challenge
 
                 challenges += [challenge]
-                self.dut.challenge( challenge)
+                self.dut.challenge(challenge)
                 time.sleep(self.trigger_delay - (time.time() - start))
 
             log.debug( "response")
@@ -211,14 +211,15 @@ class capture:
             f.write(demod)
         
 
-        log.debug( "converting %d and %d bytes" % (len(trig), len(demod)))
+        log.debug("converting %d and %d bytes" % (len(trig), len(demod)))
         trig = np.frombuffer(trig, dtype=np.dtype('f4'))
         demod = np.frombuffer(demod, dtype=np.dtype('c8'))
         if debug:
-            plot(stft( demod,cap.fft_len,cap.fft_step),
-                    f0=cap.frequency,
-                    samp_rate=cap.samp_rate,
-                    fft_step=cap.fft_step,
+            log.debug("drawing plot")
+            plot(stft(demod, self.fft_len, self.fft_step),
+                    f0=self.frequency,
+                    samp_rate=self.samp_rate,
+                    fft_step=self.fft_step,
                     title="Raw Trace",
                     clear=True,
                     blocking=True)
@@ -231,34 +232,61 @@ class capture:
 
         return zip(challenges, traces)
 
+    #haar wavelet transform
+    def pulse_wavlet_transform(self, trig, width):
+        ret = np.zeros(len(trig))
+        s = np.cumsum(trig - trig.mean())
+        for i in xrange(0,len(s) - 4*width-4):
+            r = -(s[i+width] - s[i]) + (s[i+3*width] - s[i+width]) - (s[i+4*width] - s[i+3*width])
+            ret[(i)] = np.abs(r/width)
+        return ret
+
+    #slope wavelet
+    def haar_transform(self, trig, width):
+        ret = np.zeros(len(trig))
+        s = np.cumsum(trig - trig.mean())
+        for i in xrange(0,len(s) - 4*width-4):
+            r = -(s[i+width] - s[i]) + (s[i+2*width] - s[i+width])
+            ret[(i)] = np.abs(r/width)
+        return ret
+
     #use trigger signal to extract executions from trace
     def extract( self, demod, trig, count, delay, debug=False):
-        threshold = trig.mean()
         trig_decimation = 100
         samp_rate = self.samp_rate
-        pre_trigger = self.trigger_pre
-        post_trigger = self.trigger_post
 
         if debug:
-            plot(trig, samp_rate=20e3, ylabel="",title="Trigger Signal")
+            plot(trig, samp_rate=self.samp_rate*self.demod_decimation/trig_decimation, ylabel="",title="Trigger Signal")
 
+        #TODO remove from here!!
+        #compute wavelet width by execution time
+        t = time.time()
+        self.dut.challenge(self.dut.values[0])
+        exec_time = time.time() - t
+        print "exec_time", exec_time
+        width = int(exec_time * self.capture_samp_rate / trig_decimation) / 2
+        print "width", width
+            
+        #slope search by haar transform
+        haar = self.haar_transform(trig, width)
+        if debug:
+            plot(haar, samp_rate=self.samp_rate*self.demod_decimation/trig_decimation, title="Haar transform")
+
+        trigger = []
+        for i in xrange(count*2):
+            t = np.unravel_index(haar.argmax(), haar.shape)[0]
+            haar[t-width:t+width] = 0
+            trigger += [t+width]
+        trigger = sorted(trigger)
+
+        #extract traces
         traces = []
-        stop2 = 0
-        for i in xrange( len( trig)-1, 1, -1):
-            if trig[i-1] > threshold and trig[i] <= threshold: 
-                start = ((i*trig_decimation/self.demod_decimation) - (pre_trigger*samp_rate))
-                stop  = ((i*trig_decimation/self.demod_decimation) + (post_trigger*samp_rate))
-
-                #use delay to drop false trigger points
-                d = (stop2 - stop)/samp_rate
-                if stop2 != 0 and np.abs( d - delay) > 0.08 * delay:
-                    print "skip %f" % (d * 1000)
-                    continue
-
-                stop2 = stop
-                traces += [demod[start:stop]]
-
-        print len(traces)
+        for i in xrange(count):
+            t = trigger[2*i]
+            start = int((t*trig_decimation/self.demod_decimation) - (exec_time*0.2*samp_rate))
+            stop  = int((t*trig_decimation/self.demod_decimation) + (exec_time*1.2*samp_rate))
+            traces += [demod[start:stop]]
+            
         return traces[::-1]
 
     def mask(self, stft):
@@ -306,8 +334,8 @@ if __name__ == "__main__":
     while True:
         res = cap.capture(debug=True)
         try:
-            for c, trace in [res[0]]:
-                plot(stft( trace,cap.fft_len,cap.fft_step),
+            for c, trace in res:
+                plot(stft(trace,cap.fft_len,cap.fft_step),
                         f0=cap.frequency,
                         samp_rate=cap.samp_rate,
                         fft_step=cap.fft_step,

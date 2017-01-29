@@ -90,11 +90,9 @@ Key | Description
 --- | ---
 frequency | Absolute frequency for the carrier used for the trigger signal. This carrier should be stronger if the program is executed.
 delay | Time delay between two executions of the test program. This can be used to speed up capturing, but can also destabilze the triggering process.
-pre | Timespan in seconds to extract before the trigger point.
-post | Timespan in seconds to extract after the trigger point.
 low_pass | Cutoff frequency of the Input lowpass filter for the AM-demod.
 
-##### demod
+##### Demodulation
 Key | Description
 --- | ---
 frequency | Absolute frequency of the carrier used for demodulation.

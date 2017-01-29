@@ -2,7 +2,6 @@
   "misc" : {
     "cmd" : "./cprog/openssl-exp",
     "ip" : "192.168.1.3",
-    "ip" : "127.0.0.1",
     "port" : 5005,
     "outdir" : "/tmp/out"
   },
@@ -16,8 +15,6 @@
   "trigger" : {
     "frequency" : 126.896e6,
     "delay" : 0.15,
-    "pre" : 0.050,
-    "post" : -0.010,
     "low_pass": 50e3
   },
 
