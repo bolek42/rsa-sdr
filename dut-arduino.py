@@ -10,17 +10,6 @@ from config import config_get, config_reload
 from config import *
 import time
 
-def n2hex(n, length=512):
-    res = ""
-    while n > 0:
-        res = "%02x" % (n%256) + res
-        n /= 256
-
-    res = ("0"*(length - len(res))) + res
-    return res
-
-
-# DUT client
 class dut():
     def __init__(self):
         self.serial = serial.Serial('/dev/ttyACM0', 115200)

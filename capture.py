@@ -10,9 +10,8 @@ from multiprocessing import Process, Queue
 import threading
 import time
 
-from config import config_get, config_reload
+from config import config_get, config_set, config_reload
 from dsp import *
-from arduino_dut import *
 
 import logging as log
 log.basicConfig(filename='/dev/stdout', filemode='w', level=log.DEBUG)
@@ -41,14 +40,12 @@ class capture:
             os.mkfifo(self.trig_fifo)
             os.mkfifo(self.demod_fifo)
 
-
             self.recv_p = None
             self.tb = None
             self.restart_tb()
 
-
-            self.dut=dut()
-            self.configure_timig()
+            dut = imp.load_source("dut",  config_get("dut"))
+            self.dut = dut.dut()
 
         if self.dump:
             try:
@@ -102,13 +99,13 @@ class capture:
     #configure the top_block
     def restart_tb(self):
         if self.tb is not None:
-            log.debug( "stop top_block")
+            log.debug("stop top_block")
             self.tb.stop()
             self.tb.wait()
             del self.tb
 
         if self.recv_p is not None:
-            log.debug( "stop recv_thread")
+            log.debug("stop recv_thread")
             self.recv_p.terminate()
 
         self.config_reload()
@@ -119,11 +116,9 @@ class capture:
         self.recv_p.start()
 
         #create top_block
-        log.debug( "creating top_block")
-        top_block = imp.load_source( "top_block", "grc/cap-demod/top_block.py")
-        log.debug( "creating top_block")
+        top_block = imp.load_source("top_block", "grc/cap-demod/top_block.py")
         tb = self.tb = top_block.top_block()
-        log.debug( "top Block created")
+        log.debug("top_lock created")
 
         #top_block config
         tb.set_center_frequency(self.capture_frequency)
@@ -149,9 +144,11 @@ class capture:
     def configure_timig(self):
         t = time.time()
         self.dut.challenge(self.dut.values[0])
-        self.execution_time = time.time() - t #TODO save to config
-        log.debug("dut execution time: %.2fms" % (self.execution_time * 1e3))
-        self.trigger_delay = 5 * self.execution_time
+        self.trigger_execution_time = time.time() - t
+        log.debug("dut execution time: %.2fms" % (self.trigger_execution_time * 1e3))
+        config_set("trigger.execution_time", self.trigger_execution_time, float)
+        self.trigger_delay = 5 * self.trigger_execution_time
+        config_set("trigger.delay", self.trigger_delay, float)
         log.debug("using delay: %.2fms" % (self.trigger_delay * 1e3))
 
 
@@ -242,9 +239,10 @@ class capture:
 
     def find_trigger_frequency(self, demod, count=10):
         s = stft(demod, self.fft_len, self.fft_step)
-        s = np.cumsum(s-s.mean(axis=0), axis=0)
+        s = (s-s.mean(axis=0)) / s.std(axis=0)
+        s = np.cumsum(s, axis=0)
 
-        width = int(self.execution_time * self.capture_samp_rate / self.fft_step) / 2
+        width = int(self.trigger_execution_time * self.capture_samp_rate / self.fft_step) / 2
 
         #use wavelets to search for count consecutive pulses
         pulses = np.zeros((self.trigger_delay * self.samp_rate / self.fft_step, self.fft_len))
@@ -256,6 +254,13 @@ class capture:
 
             pulses[offset] = np.abs(p)
 
+
+        b = np.unravel_index(pulses.argmax(), pulses.shape)[1]
+        trigger_frequency = stft_bin2f(b, self.capture_frequency, self.fft_len, self.samp_rate)
+        self.trigger_frequency = trigger_frequency
+        config_set("trigger.frequency", trigger_frequency, float)
+        log.debug("using trigger frequency %.3fMHz" % (trigger_frequency/1e6))
+
         plot(pulses,
             title="Pulse search",
             xlabel="Frequency in MHz",
@@ -264,11 +269,6 @@ class capture:
             samp_rate=self.samp_rate,
             fft_step=self.fft_step,
         )
-
-        b = np.unravel_index(pulses.argmax(), pulses.shape)[1]
-        trigger_frequency = stft_bin2f(b, self.frequency, self.fft_len, self.samp_rate)
-        self.trigger_frequency = trigger_frequency
-        log.debug("using trigger frequency %.3fMHz" % (trigger_frequency/1e6))
 
         return trigger_frequency
 
@@ -291,7 +291,7 @@ class capture:
             plot(trig, samp_rate=self.samp_rate*self.demod_decimation/trig_decimation, ylabel="",title="Trigger Signal")
 
         #compute wavelet width by execution time
-        width = int(self.execution_time * self.capture_samp_rate / trig_decimation) / 2
+        width = int(self.trigger_execution_time * self.capture_samp_rate / trig_decimation) / 2
             
         #slope search by haar transform
         haar = self.haar_transform(trig, width)
@@ -302,6 +302,7 @@ class capture:
                     xlabel="Time in ms",
                     ylabel="Wavelet Response")
 
+        #extract slopes
         trigger = []
         for i in xrange(count*2):
             t = np.unravel_index(haar.argmax(), haar.shape)[0]
@@ -313,8 +314,8 @@ class capture:
         traces = []
         for i in xrange(count):
             t = trigger[2*i]
-            start = int((t*trig_decimation/self.demod_decimation) - (self.execution_time*0.2*samp_rate))
-            stop  = int((t*trig_decimation/self.demod_decimation) + (self.execution_time*samp_rate))
+            start = int((t*trig_decimation/self.demod_decimation) - (self.trigger_execution_time*0.2*samp_rate))
+            stop  = int((t*trig_decimation/self.demod_decimation) + (self.trigger_execution_time*samp_rate))
             traces += [demod[start:stop]]
             
         return traces[::-1]
@@ -361,21 +362,23 @@ class capture:
 if __name__ == "__main__":
     cap = capture()
 
-    while True:
-        challenges, trig, demod = cap.receive(debug=True)
-        cap.find_trigger_frequency(demod)
-        cap.restart_tb()
+    cap.configure_timig()
 
-        res = cap.capture(debug=True)
-        try:
-            for c, trace in res:
-                plot(stft(trace,cap.fft_len,cap.fft_step),
-                        f0=cap.frequency,
-                        samp_rate=cap.samp_rate,
-                        fft_step=cap.fft_step,
-                        title="Aligned Trace",
-                        clear=True,
-                        blocking=True)
-        except:
-            pass
-        cap.restart_tb()
+    challenges, trig, demod = cap.receive(debug=True)
+    cap.find_trigger_frequency(demod)
+    cap.restart_tb()
+
+    res = cap.capture(debug=True)
+    try:
+        for c, trace in res:
+            plot(stft(trace,cap.fft_len,cap.fft_step),
+                    f0=cap.frequency,
+                    samp_rate=cap.samp_rate,
+                    fft_step=cap.fft_step,
+                    title="Aligned Trace",
+                    clear=True,
+                    blocking=True)
+    except:
+        pass
+
+    os.kill(os.getpid(), 9)

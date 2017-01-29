@@ -1,38 +1,70 @@
 #Summary
 This is a simple framework to perform a DPA analysis by using a SDR receiver.
 It uses the Osmocom SDR source, so it is compatible with most SDR receivers such as RTL-SDR, Hackrf (rad1o) and USRP.
-The mains focus was to attack laptops and desktop PC's.
-It is required to start a small daemon on the DUT that allows (limited ;) remote code execution (see dut.py for details).
-As most of this devices are leaking at a very low frequency ( < 4MHz) in most cases an additional upconverter is required.
+As most of this devices are leaking at a low frequencies in most cases an additional upconverter is required.
 
 
 # Installation and Requirements
 Install the following packages:
 
+    -python2
     -GNURadio
     -OsmoSDR
-    -python2
     -matplotlib, numpy
 
 Compile grc/cap-demod/cap-demod.grc using GNURadio Companion
 
-# Tools Overview
-All programs expecting a configuration fgile as first argument.
-See below for details.
+# Run
+First it is required to configure the receiver to correctly extract the individual executions.
+This will create config/test.json and store all necessary parameter in this file.
 
-## dut.py
-This is the daemon running on the Device under Test.
-It allows to start programs on the DUT over a Network connection and passing an argument to it.
-The test programs are located in the cprog/ directory.
+    python2 capture.py --config=config/test.json --dut=dut-openssl.py --capture-frequency=125.5e6
+
+This will tune the SDR to 125.5MHz and perform 10 executions of the test program.
+First the raw capture is shown and a search for a suitable trigger frequency is performed.
+In a second step a complete capture is performed with extraction of the individual traces.
+
+
+# Device Under Test
+A dut class implements tha api to a Device Under Test, allowing this framework to pass a challenge, that will be processed by the dut.
+An example might look like this:
+```python
+class dut():
+    values = [1,2] #set of testvalues
+
+    def __init__(self):
+        pass
+
+    def challenge(self, challenge):
+        #pass the challenge to the dut
+```
+
+
+## dut-openssl.py
+This is a deamon allows to start OpenSSL test programs (located in cprog/) on the DUT over a network connection and pass an argument to it.
+It is required to start this deamon on the target machine.
+
+Key | Description
+--- | ---
+cmd | Path to the test Program to run on DUT
+ip | IP of the DUT
+port | Port for the daemon to listen
+
+## dut-arduino.py
+The C code for this dut is located in arduino-des/.
+It will send a plaintext to the arduino, which will be encrypted using DES.
+
+
+# Tools Overview
+
+## dut-arduino.py
+This class allows 
+
 
 ## capture.py
 This tool can be used to calibrate the trigger and adapt the preprocessing e.g. modulation and digital filter.
 It will trigger multiple executions and try to extract those.
 This will guide you through the following steps:
-
-    1. The raw trace containing 10 executions of the test program.
-    2. The trigger signal. The executions should be clearly distinguishable to ensure a good succsess rate.
-    3. Extracted trace for a single execution of one demodulated and preprocessed trace.
 
 ## dpa.py
 Can be used to perform a DPA analysis for the specified program.
@@ -64,14 +96,6 @@ A small capacitor should be used to protect the input of the SDR receiver.
 The configuration file is stored as JSON format. A sample file can be found at config/sample.json
 All programs excepting a configuration file as first Argument.
 
-##### misc
-Some generic information about the DUT
-
-Key | Description
---- | ---
-cmd | Path to the test Program to run on DUT
-ip | IP of the DUT
-port | Port for the daemon to listen
 
 ##### capture
 This holds the SDR configuration
