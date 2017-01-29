@@ -80,6 +80,8 @@ def plot(   data,
         if samp_rate > 1:
             if f0 > 0:
                 x = np.arange((f0 - samp_rate/2)/1e6,(f0 + samp_rate/2)/1e6, samp_rate/len(data)/1e6)
+            elif samp_rate > 1:
+                x = np.arange(0,len(data)) * 1e3 / samp_rate
             else:
                 x = np.arange(0,len(data))
             x = x[:len(data)]

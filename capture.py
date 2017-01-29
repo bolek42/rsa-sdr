@@ -116,7 +116,7 @@ class capture:
         self.recv_p.start()
 
         #create top_block
-        top_block = imp.load_source("top_block", "grc/cap-demod/top_block.py")
+        top_block = imp.load_source("top_block", "grc/top_block.py")
         tb = self.tb = top_block.top_block()
         log.debug("top_lock created")
 
@@ -262,7 +262,7 @@ class capture:
         log.debug("using trigger frequency %.3fMHz" % (trigger_frequency/1e6))
 
         plot(pulses,
-            title="Pulse search",
+            title="Multi Pulse Response",
             xlabel="Frequency in MHz",
             ylabel="Offset in ms",
             f0=self.frequency,
@@ -288,7 +288,11 @@ class capture:
         samp_rate = self.samp_rate
 
         if debug:
-            plot(trig, samp_rate=self.samp_rate*self.demod_decimation/trig_decimation, ylabel="",title="Trigger Signal")
+            plot(trig,
+                samp_rate=self.samp_rate*self.demod_decimation/trig_decimation, 
+                ylabel="",
+                xlabel="Time in ms",
+                title="Trigger Signal")
 
         #compute wavelet width by execution time
         width = int(self.trigger_execution_time * self.capture_samp_rate / trig_decimation) / 2
@@ -298,7 +302,7 @@ class capture:
         if debug:
             plot(haar,
                     samp_rate=self.samp_rate*self.demod_decimation/trig_decimation,
-                    title="Haar transform",
+                    title="Haar Transform",
                     xlabel="Time in ms",
                     ylabel="Wavelet Response")
 
