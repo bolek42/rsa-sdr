@@ -11,15 +11,15 @@ Install the following packages:
     -OsmoSDR
     -matplotlib, numpy
 
-Compile grc/cap-demod/cap-demod.grc using GNURadio Companion
+Compile grc/cap-demod.grc using GNURadio Companion
 
 # Run
-First it is required to configure the receiver to correctly extract the individual executions.
-This will create config/test.json and store all necessary parameter in this file.
+First it is required to configure the receiver to correctly extract the individual traces.
+This call will tune the SDR to 125.5MHz and will guide you through the following steps.
+The file config/test.json will be created and all necessary parameter are stored in this file.
 
     python2 capture.py --config=config/test.json --dut=dut-openssl.py --capture-frequency=125.5e6
 
-This will tune the SDR to 125.5MHz and will guide you through the following steps.
 First 10 executions of the test program are performed and the resulting spectrogram is shown.
 In this case all 10 executions are clearly visible.
 
@@ -40,10 +40,11 @@ Using a Haar-Wavelet (slope) the beginnging and end of the execution is detected
 The maxima in this transformed signal are used as trigger points to extract the individual traces from the raw data.
 The result is the aligned trace.
 
-![alt tag](https://raw.githubusercontent.com/bolek42/rsa-sdr/dev/doc/images/trigger-signal.jpeg)
+![alt tag](https://raw.githubusercontent.com/bolek42/rsa-sdr/dev/doc/images/haar-transform.jpeg)
 
 The resulting parameter are written to the configuration file and we are now ready to capture traces and perform side channel analysis on this data.
 
+![alt tag](https://raw.githubusercontent.com/bolek42/rsa-sdr/dev/doc/images/trace-aligned.jpeg)
 
 # Device Under Test
 A dut class implements tha api to a Device Under Test, allowing this framework to pass a challenge, that will be processed by the dut.
