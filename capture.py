@@ -12,7 +12,7 @@ import time
 
 from config import config_get, config_reload
 from dsp import *
-from dut import *
+from arduino_dut import *
 
 import logging as log
 log.basicConfig(filename='/dev/stdout', filemode='w', level=log.DEBUG)
@@ -48,6 +48,7 @@ class capture:
 
 
             self.dut=dut()
+            self.configure_timig()
 
         if self.dump:
             try:
@@ -69,7 +70,6 @@ class capture:
         #trigger
         self.trigger_low_pass = config_get("trigger.low_pass", int)
         self.trigger_frequency = config_get("trigger.frequency", int)
-        self.trigger_delay = config_get("trigger.delay", float)
 
         #demod
         self.demod_select = config_get("demod.select", list)
@@ -115,7 +115,7 @@ class capture:
 
         #start recv_thread
         self.queue = Queue(maxsize=1024)
-        self.recv_p = Process(target=self.receive, args=(self.queue,))
+        self.recv_p = Process(target=self.read, args=(self.queue,))
         self.recv_p.start()
 
         #create top_block
@@ -146,10 +146,17 @@ class capture:
         log.debug( "top block running")
         time.sleep(1) #wait for filters to initialize
 
-            
+    def configure_timig(self):
+        t = time.time()
+        self.dut.challenge(self.dut.values[0])
+        self.execution_time = time.time() - t #TODO save to config
+        log.debug("dut execution time: %.2fms" % (self.execution_time * 1e3))
+        self.trigger_delay = 5 * self.execution_time
+        log.debug("using delay: %.2fms" % (self.trigger_delay * 1e3))
 
-    def receive( self, queue):
-        log.debug( "capture thread started")
+
+    def read(self, queue):
+        log.debug("capture thread started")
 
         demod = open( self.demod_fifo, "rb")
         trig = open( self.trig_fifo, "rb")
@@ -163,7 +170,7 @@ class capture:
                 queue.get()
             queue.put( (t,d))
 
-    def capture(self, values=None, debug=False, count=10, delay=0.2):
+    def capture(self, values=None, debug=False, count=10):
         # TODO Offline Traces (currently disabled)
         if self.offline:
             cfile = self.files.pop()
@@ -175,41 +182,48 @@ class capture:
             return challenge,trace
 
         else:
-            #performing count executions
-            log.debug( "challenge")
-            #flush data from recv. queue
-            while self.queue.qsize() > 0: self.queue.get()
+            challenges, trig, demod = self.receive(values, debug, count)
+            traces = self.extract(trig, demod, count, debug)
 
-            #trigger count challenge executions
-            challenges = []
-            time.sleep(self.trigger_delay)
-            for i in xrange(count):
-                start = time.time()
+            if len(traces) != count:
+                log.warn("extract failed")
+                return []
 
-                #perform one execution
-                challenge = choice(self.dut.values) if values is None else choice(values)
-                challenge = self.dut.values[i%len(self.dut.values)] if values is None else values[i%len(values)]
-                if debug:
-                    print "callenge: %s" % challenge
+            return zip(challenges, traces)
 
-                challenges += [challenge]
-                self.dut.challenge(challenge)
-                time.sleep(self.trigger_delay - (time.time() - start))
+    def receive(self, values=None, debug=False, count=10):
+        #performing count executions
+        log.debug( "challenge")
+        #flush data from recv. queue
+        while self.queue.qsize() > 0: self.queue.get()
 
-            log.debug( "response")
+        #trigger count challenge executions
+        challenges = []
+        time.sleep(self.trigger_delay)
+        for i in xrange(count):
+            start = time.time()
 
-            #get samples from queue
-            t = count * self.trigger_delay + 0.3 #timespan of interest
-            trig = ""
-            demod = ""
-            for i in xrange( int(self.capture_samp_rate * t / self.bufflen)):
-                t,d = self.queue.get() 
-                trig += t
-                demod += d
+            #perform one execution
+            challenge = choice(self.dut.values) if values is None else choice(values)
+            challenge = self.dut.values[i%len(self.dut.values)] if values is None else values[i%len(values)]
+            if debug:
+                print "callenge: %s" % challenge
 
-        with open("/tmp/demod.cfile","wb") as f:
-            f.write(demod)
-        
+            challenges += [challenge]
+            self.dut.challenge(challenge)
+            time.sleep(self.trigger_delay - (time.time() - start))
+
+        time.sleep(self.trigger_delay)
+        log.debug( "response")
+
+        #get samples from queue
+        t = (2+count) * self.trigger_delay #timespan of interest
+        trig = ""
+        demod = ""
+        for i in xrange(int(self.capture_samp_rate * t / self.bufflen)):
+            t,d = self.queue.get() 
+            trig += t
+            demod += d
 
         log.debug("converting %d and %d bytes" % (len(trig), len(demod)))
         trig = np.frombuffer(trig, dtype=np.dtype('f4'))
@@ -224,53 +238,69 @@ class capture:
                     clear=True,
                     blocking=True)
 
-        log.debug( "extract")
-        traces = self.extract( demod, trig, count, self.trigger_delay, debug=debug)
-        if len(traces) != count:
-            log.warn("extract failed")
-            return []
+        return challenges, trig, demod
 
-        return zip(challenges, traces)
+    def find_trigger_frequency(self, demod, count=10):
+        s = stft(demod, self.fft_len, self.fft_step)
+        s = np.cumsum(s-s.mean(axis=0), axis=0)
+
+        width = int(self.execution_time * self.capture_samp_rate / self.fft_step) / 2
+
+        #use wavelets to search for count consecutive pulses
+        pulses = np.zeros((self.trigger_delay * self.samp_rate / self.fft_step, self.fft_len))
+        for offset in xrange(int(self.trigger_delay * self.samp_rate / self.fft_step)):
+            p = np.zeros(self.fft_len)
+            for i in xrange(10):
+                o = int(offset + (self.trigger_delay * i * self.capture_samp_rate / self.fft_step))
+                p += (s[o+width] - s[o]) + (s[o+3*width] - s[o+width]) - (s[o+4*width] - s[o+3*width])
+
+            pulses[offset] = np.abs(p)
+
+        plot(pulses,
+            title="Pulse search",
+            xlabel="Frequency in MHz",
+            ylabel="Offset in ms",
+            f0=self.frequency,
+            samp_rate=self.samp_rate,
+            fft_step=self.fft_step,
+        )
+
+        b = np.unravel_index(pulses.argmax(), pulses.shape)[1]
+        trigger_frequency = stft_bin2f(b, self.frequency, self.fft_len, self.samp_rate)
+        self.trigger_frequency = trigger_frequency
+        log.debug("using trigger frequency %.3fMHz" % (trigger_frequency/1e6))
+
+        return trigger_frequency
+
 
     #haar wavelet transform
-    def pulse_wavlet_transform(self, trig, width):
-        ret = np.zeros(len(trig))
-        s = np.cumsum(trig - trig.mean())
-        for i in xrange(0,len(s) - 4*width-4):
-            r = -(s[i+width] - s[i]) + (s[i+3*width] - s[i+width]) - (s[i+4*width] - s[i+3*width])
-            ret[(i)] = np.abs(r/width)
-        return ret
-
-    #slope wavelet
     def haar_transform(self, trig, width):
         ret = np.zeros(len(trig))
-        s = np.cumsum(trig - trig.mean())
-        for i in xrange(0,len(s) - 4*width-4):
+        s = np.cumsum(trig-trig.mean())
+        for i in xrange(0,len(s) - 2*width):
             r = -(s[i+width] - s[i]) + (s[i+2*width] - s[i+width])
             ret[(i)] = np.abs(r/width)
         return ret
 
     #use trigger signal to extract executions from trace
-    def extract( self, demod, trig, count, delay, debug=False):
+    def extract( self, trig, demod, count, debug=False):
         trig_decimation = 100
         samp_rate = self.samp_rate
 
         if debug:
             plot(trig, samp_rate=self.samp_rate*self.demod_decimation/trig_decimation, ylabel="",title="Trigger Signal")
 
-        #TODO remove from here!!
         #compute wavelet width by execution time
-        t = time.time()
-        self.dut.challenge(self.dut.values[0])
-        exec_time = time.time() - t
-        print "exec_time", exec_time
-        width = int(exec_time * self.capture_samp_rate / trig_decimation) / 2
-        print "width", width
+        width = int(self.execution_time * self.capture_samp_rate / trig_decimation) / 2
             
         #slope search by haar transform
         haar = self.haar_transform(trig, width)
         if debug:
-            plot(haar, samp_rate=self.samp_rate*self.demod_decimation/trig_decimation, title="Haar transform")
+            plot(haar,
+                    samp_rate=self.samp_rate*self.demod_decimation/trig_decimation,
+                    title="Haar transform",
+                    xlabel="Time in ms",
+                    ylabel="Wavelet Response")
 
         trigger = []
         for i in xrange(count*2):
@@ -283,8 +313,8 @@ class capture:
         traces = []
         for i in xrange(count):
             t = trigger[2*i]
-            start = int((t*trig_decimation/self.demod_decimation) - (exec_time*0.2*samp_rate))
-            stop  = int((t*trig_decimation/self.demod_decimation) + (exec_time*1.2*samp_rate))
+            start = int((t*trig_decimation/self.demod_decimation) - (self.execution_time*0.2*samp_rate))
+            stop  = int((t*trig_decimation/self.demod_decimation) + (self.execution_time*samp_rate))
             traces += [demod[start:stop]]
             
         return traces[::-1]
@@ -332,6 +362,10 @@ if __name__ == "__main__":
     cap = capture()
 
     while True:
+        challenges, trig, demod = cap.receive(debug=True)
+        cap.find_trigger_frequency(demod)
+        cap.restart_tb()
+
         res = cap.capture(debug=True)
         try:
             for c, trace in res:
