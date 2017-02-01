@@ -1514,7 +1514,7 @@
     </param>
     <param>
       <key>bw0</key>
-      <value>0</value>
+      <value>samp_rate</value>
     </param>
     <param>
       <key>dc_offset_mode0</key>

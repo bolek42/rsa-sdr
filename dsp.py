@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from multiprocessing import Process
+import threading
 import time
 
 # Fourier & Co.
@@ -94,6 +95,9 @@ def plot(   data,
 
     # 2D Plots (stft)
     elif len(data.shape) == 2:
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+
         if f0 > 0:
             extent = [  (f0 - samp_rate/2)/1e6,
                         (f0 + samp_rate/2)/1e6,
@@ -102,8 +106,6 @@ def plot(   data,
             im = plt.imshow(data,interpolation='bilinear', extent=extent, aspect='auto')
         else:
             im = plt.imshow(data,interpolation='bilinear', aspect='auto')
-        plt.xlabel(xlabel)
-        plt.ylabel(ylabel)
         plt.colorbar(im)
 
     # dump
@@ -113,13 +115,12 @@ def plot(   data,
     if npy != "":
         np.save(npy, data)
 
-    #arch show thread hack
     if blocking:
         plt.show()
         raw_input("press return to continue")
     else:
-        p = Process(target=plt.show,args=(True,))
-        p.start()
+        plt.draw()
+        plt.pause(.1)
 
-p = None
 plt.ion()
+p = None

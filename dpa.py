@@ -2,7 +2,7 @@ import os
 import traceback
 import sys
 
-from config import config_get, config_reload
+from config import config_get, config_reload, args
 from capture import *
 from random import choice, randrange
 
@@ -17,7 +17,6 @@ class dpa:
         self.sigma = {}
         self.n = {}
         self.error = {}
-
 
     def apply_config(self):
         self.outdir = config_get("misc.outdir", str)
@@ -71,7 +70,7 @@ class dpa:
         d = a - b
         if verbose:
             print "\x1b[0;0H"+"\x1b[2J",
-            print "dpa groups: %d:%d" % (self.n[A].max(), self.n[B].max())
+            print "\rdpa groups: %d:%d" % (self.n[A].max(), self.n[B].max())
             print "dpa shape: " + str(d.shape)
             print "dpa max: %f" % np.max(d)
             print "dpa min: %f" % np.min(d)
@@ -82,7 +81,6 @@ class dpa:
 
     #this methods captures multiple traces and returns the DPA anlysis for the given Values
     def oracle(self, runs=3000, values=None, verbose=True, reference=None, max_trace=0, count=30):
-
         #perform dpa attack for values
         dp = None
         i = 0
@@ -107,12 +105,6 @@ class dpa:
                             return dp
                     res = self.cap.capture(values=val, count=count)
                 
-                ##gui
-                #if dp is None or len(dp) == 0:
-                #    dp = [0]
-                #print "\rrun %d \t%f-(%f)=%f\tchallenge: %s" % (i, np.max(dp), np.min(dp), np.max(dp) - np.min(dp), repr(challenge)[0:64] ),
-                #sys.stdout.flush()
-
                 for challenge, t in res:
                     s = self.cap.preprocess(t)
                     #s = np.sum(s,axis=0)
@@ -126,27 +118,27 @@ class dpa:
                 print traceback.format_exc()
 
             # show current DPA
-            if i % 1 == 0:
-                try:
-                    if values is None:
-                        a = self.n.keys()[0]
-                        b = self.n.keys()[1]
-                    else:
-                        a = values[0]
-                        b = values[1]
-                    
-                    dp = self.dpa(a,b,verbose=verbose)
+            try:
+                if values is None:
+                    a = self.n.keys()[0]
+                    b = self.n.keys()[1]
+                else:
+                    a = values[0]
+                    b = values[1]
+                
+                dp = self.dpa(a,b,verbose=verbose)
 
-                    title = "Run %d" % (i)
-                    plot(   dp,
-                            f0=self.cap.frequency,
-                            samp_rate=self.cap.samp_rate,
-                            fft_step=self.cap.fft_step,
-                            blocking=False,
-                            ylabel="Frequency",
-                            png="%s/%d.png" % (self.outdir,i), title=title)
-                except Exception as e:
-                    print traceback.format_exc()
+                title = "DPA run %d" % (i)
+                plot(   dp,
+                        f0=self.cap.frequency,
+                        samp_rate=self.cap.samp_rate,
+                        fft_step=self.cap.fft_step,
+                        blocking=False,
+                        xlabel="Frequency in MHz",
+                        ylabel="Time in ms",
+                        png="%s/%d.png" % (self.outdir,i), title=title)
+            except Exception as e:
+                print traceback.format_exc()
 
         a = values[0]
         b = values[1]
@@ -158,6 +150,6 @@ class dpa:
 
 if __name__ == "__main__":
     dpa = dpa()
-    p,n = dpa.oracle()
+    p,n = dpa.oracle(values=args)
     print "min: %f\t max: %f" % (p,n)
     raw_input("press return to exit")

@@ -5,6 +5,7 @@ import getopt
 
 cfg = {}
 config_file = ""
+args = []
 
 _doc_="""python2 %s [args]
 Misc:
@@ -51,6 +52,7 @@ def config_set(key, value, cast=None):
 def config_reload():
     global cfg
     global config_file
+    global args
 
     if len(sys.argv[1:]) == 0:
         usage()

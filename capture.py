@@ -53,6 +53,10 @@ class capture:
             except:
                 pass
 
+    def set_capture_frequency(self, f):
+        self.capture_frequency = config_set("capture.frequency", f, int)
+        self.restart_tb()
+
     #load config from file
     def config_reload(self):
         config_reload()
@@ -67,6 +71,8 @@ class capture:
         #trigger
         self.trigger_low_pass = config_get("trigger.low_pass", int)
         self.trigger_frequency = config_get("trigger.frequency", int)
+        self.trigger_delay = config_get("trigger.delay", float)
+        self.trigger_execution_time = config_get("trigger.execution_time", float)
 
         #demod
         self.demod_select = config_get("demod.select", list)
@@ -94,7 +100,6 @@ class capture:
 
         self.samp_rate = self.capture_samp_rate / self.demod_decimation
         self.demod_bandpass_high = min(self.samp_rate / 2,  self.demod_bandpass_high)
-
 
     #configure the top_block
     def restart_tb(self):
@@ -143,7 +148,7 @@ class capture:
 
     def configure_timig(self):
         t = time.time()
-        self.dut.challenge(self.dut.values[0])
+        self.dut.challenge(self.dut.test_value)
         self.trigger_execution_time = time.time() - t
         log.debug("dut execution time: %.2fms" % (self.trigger_execution_time * 1e3))
         config_set("trigger.execution_time", self.trigger_execution_time, float)
@@ -201,8 +206,7 @@ class capture:
             start = time.time()
 
             #perform one execution
-            challenge = choice(self.dut.values) if values is None else choice(values)
-            challenge = self.dut.values[i%len(self.dut.values)] if values is None else values[i%len(values)]
+            challenge = self.dut.test_value if values is None else values[i%len(values)]
             if debug:
                 print "callenge: %s" % challenge
 
@@ -237,9 +241,9 @@ class capture:
 
         return challenges, trig, demod
 
-    def find_trigger_frequency(self, demod, count=10):
+    def pulse_search(self, demod, count=10):
         s = stft(demod, self.fft_len, self.fft_step)
-        s = (s-s.mean(axis=0)) / s.std(axis=0)
+        s = (s-s.mean(axis=0))# / s.std(axis=0)
         s = np.cumsum(s, axis=0)
 
         width = int(self.trigger_execution_time * self.capture_samp_rate / self.fft_step) / 2
@@ -254,6 +258,11 @@ class capture:
 
             pulses[offset] = np.abs(p)
 
+        return pulses
+
+
+    def find_trigger_frequency(self, demod, count=10):
+        pulses = self.pulse_search(demod, count)
 
         b = np.unravel_index(pulses.argmax(), pulses.shape)[1]
         trigger_frequency = stft_bin2f(b, self.capture_frequency, self.fft_len, self.samp_rate)
@@ -314,12 +323,22 @@ class capture:
             trigger += [t+width]
         trigger = sorted(trigger)
 
+        #upate execution time
+        if debug:
+            self.trigger_execution_time = 0
+            for i in xrange(count):
+                t = float(trigger[2*i+1] - trigger[2*i]) * trig_decimation / self.capture_samp_rate
+                self.trigger_execution_time += t
+            self.trigger_execution_time /= count
+            log.debug("dut execution time: %.2fms" % (self.trigger_execution_time * 1e3))
+            config_set("trigger.execution_time", self.trigger_execution_time, float)
+
         #extract traces
         traces = []
         for i in xrange(count):
             t = trigger[2*i]
             start = int((t*trig_decimation/self.demod_decimation) - (self.trigger_execution_time*0.2*samp_rate))
-            stop  = int((t*trig_decimation/self.demod_decimation) + (self.trigger_execution_time*samp_rate))
+            stop  = int((t*trig_decimation/self.demod_decimation) + (self.trigger_execution_time*1.1*samp_rate))
             traces += [demod[start:stop]]
             
         return traces[::-1]
