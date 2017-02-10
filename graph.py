@@ -9,10 +9,10 @@ from dut import *
 config_reload()
 
 #config
-f0 = config_get("capture.frequency", int)
-samp_rate = config_get("capture.samp_rate", int) / 8
-fft_len =  config_get("preprocess.fft_len", int)
-fft_step =  config_get("preprocess.fft_step", int)
+f0 = 0#config_get("capture.frequency", int)
+samp_rate = 0#config_get("capture.samp_rate", int) / 8
+fft_len =  0#config_get("preprocess.fft_len", int)
+fft_step =  0#config_get("preprocess.fft_step", int)
 
 print args[0]
 res = np.load(args[0])

@@ -365,6 +365,15 @@ void setup()
   digitalWrite( 13, LOW);
 }
 
+void test(char* out, char* in, uint8_t* key)
+{
+  int i,j;
+  for ( i=0; i<1000; i++)
+    for ( j=0; j < 8; j++)
+      out[j] = in[j] ^ key[j];
+  
+}
+
 void loop()
 {
 	char key[8];
@@ -376,7 +385,7 @@ void loop()
 	Serial.readBytes(key, 8); 
 	Serial.readBytes(plain, 8);
 	digitalWrite(13, HIGH);
-	encrypt( &cipher, &plain, &key);
+	encrypt(cipher, plain, key);
   digitalWrite(13, LOW);
 	Serial.write(cipher, 8);
 }

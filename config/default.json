@@ -8,25 +8,19 @@
   },
 
   "capture" : {
-    "frequency" : 126.5e6,
+    "center_frequency" : 146.5e6,
     "samp_rate" : 2e6,
-    "gain" : 40
-    },
-
-  "trigger" : {
-    "frequency" : 126.896e6,
-    "delay" : 0.0,
+    "gain" : 40,
+    "trigger_frequency" : 0,
+    "demod": 0,
+    "demod_frequency" : 146.896e6,
+    "demod_lowpass": 1e6,
+    "demod_bandpass_low": 0.0,
+    "demod_bandpass_high": 1.0,
     "execution_time": 0.0,
-    "low_pass": 50e3
+    "delay" : 0.0
   },
 
-  "demod" : {
-    "frequency" : 126.876e6,
-    "select" : [0,1,0],
-    "bandpass_low" : 1e2,
-    "bandpass_high" : 150e3,
-    "decimation" : 16
-  },
 
   "preprocess" : {
     "stft" : true,

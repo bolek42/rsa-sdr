@@ -130,13 +130,13 @@ class dpa:
 
                 title = "DPA run %d" % (i)
                 plot(   dp,
-                        f0=self.cap.frequency,
-                        samp_rate=self.cap.samp_rate,
+                        f0=self.cap.demod_frequency,
+                        samp_rate=self.cap.demod_samp_rate,
                         fft_step=self.cap.fft_step,
                         blocking=False,
                         xlabel="Frequency in MHz",
                         ylabel="Time in ms",
-                        png="%s/%d.png" % (self.outdir,i), title=title)
+                        png="%s/%d.png" % (self.outdir,i), title=title, show=False)
             except Exception as e:
                 print traceback.format_exc()
 

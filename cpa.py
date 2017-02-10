@@ -198,10 +198,8 @@ from random import *
 def des_rand_challenge(count):
     ret = []
     for i in xrange(count):
-        #with open("/dev/urandom", "rb") as f:
-        #    ret += [hexlify(f.read(8))]
-        x = ["0000000000000000","ffffffffffffffff", "f0f0f0f0f0f0f0f0"]
-        ret += [choice(x)]
+        with open("/dev/urandom", "rb") as f:
+            ret += [hexlify(f.read(8))]
         
     return ret
     
@@ -262,38 +260,50 @@ class cpa:
         for i in xrange(len(res)):
             self.trend[i] += [np.max(res[i])]
 
+            #plot(res[i],
+            #    blocking=False,
+            #    title="CFPA run %d" % cpa.n,
+            #    f0=cap.demod_frequency,
+            #    samp_rate=cap.demod_samp_rate,
+            #    fft_step=128,
+            #    png="/tmp/cpa-%d.png" % i,
+            #    show=False)
+
         plot(np.array(self.trend),
             title="CFPA Trend run %d" % cpa.n,
-            blocking=False)
+            blocking=False,
+            show=False,
+            png="/tmp/cpa-trend.png")
             
         
             
             
 if __name__ == "__main__":
-    count = 10
     sbox = 0
+    count = 30
     cpa = cpa()
     cap = capture()
     
     while True:
         for chal, trace in cap.capture(values=des_rand_challenge(count), count=count):
-            trace = stft(trace, 512, 128)
+            trace = stft(trace, 128, 32)
 
-            ##compute prediction
+            #compute prediction
             #prediction = []
             #for k in xrange(64):
             #    p = des_predict(unhexlify(chal), sbox, k)
             #    prediction += [p]
+            #cpa.add(trace, prediction)
                 
-            print chal
             p = hamming_weight(struct.unpack("<Q", unhexlify(chal))[0])
-            print p
             cpa.add(trace, [p])
-            #cpa.update_trend()
+        #cpa.update_trend()
 
         plot(cpa.cpa()[0],
             blocking=False,
             title="CFPA run %d" % cpa.n,
-            f0=cap.frequency,
-            samp_rate=cap.samp_rate,
-            fft_step=128)
+            f0=cap.demod_frequency,
+            samp_rate=cap.demod_samp_rate,
+            fft_step=128,
+            png="/tmp/cpa.png",
+            show=False)

@@ -9,6 +9,7 @@ import os
 from multiprocessing import Process, Queue
 import threading
 import time
+import select
 
 from config import config_get, config_set, config_reload
 from dsp import *
@@ -20,7 +21,9 @@ class capture:
     def __init__(self):
         self.i = 0
         self.tb = None
+        self.do_read = False
         self.config_reload()
+        self.demod_decimation = 1
 
         if self.offline:
             self.files = glob.glob(self.tracedir + "/*.cfile")
@@ -40,9 +43,22 @@ class capture:
             os.mkfifo(self.trig_fifo)
             os.mkfifo(self.demod_fifo)
 
-            self.recv_p = None
-            self.tb = None
-            self.restart_tb()
+            #start recv_thread
+            self.queue = Queue(maxsize=1024)
+            self.recv_t = threading.Thread(target=self.read, args=(self.queue,))
+            self.recv_t.start()
+
+            #create top_block
+            top_block = imp.load_source("top_block", "grc/top_block.py")
+            self.tb = top_block.top_block()
+            self.tb.Start(True)
+            print "started"
+            self.tb_t = threading.Thread(target=self.tb.Wait)
+            self.tb_t.start()
+            log.debug("top_block created")
+
+            self.tb_configure()
+            log.debug("top_bilock configured")
 
             dut = imp.load_source("dut",  config_get("dut"))
             self.dut = dut.dut()
@@ -53,15 +69,21 @@ class capture:
             except:
                 pass
 
-    def set_capture_frequency(self, f):
-        self.capture_frequency = config_set("capture.frequency", f, int)
+    def set_center_frequency(self, f):
+        self.center_frequency = config_set("capture.frequency", f, int)
+        self.tb.set_center_frequency(f)
+        self.restart_tb()
+
+    def set_demod_frequency(self, f):
+        self.center_frequency = config_set("capture.frequency", f, int)
+        self.tb.set_center_frequency(f)
         self.restart_tb()
 
     #load config from file
     def config_reload(self):
         config_reload()
         #config
-        self.capture_frequency = config_get("capture.frequency", int)
+        self.center_frequency = config_get("capture.center_frequency", int)
         self.capture_samp_rate = config_get("capture.samp_rate", int)
         self.capture_gain = config_get("capture.gain", int)
         
@@ -69,108 +91,148 @@ class capture:
         self.dump = False
 
         #trigger
-        self.trigger_low_pass = config_get("trigger.low_pass", int)
-        self.trigger_frequency = config_get("trigger.frequency", int)
-        self.trigger_delay = config_get("trigger.delay", float)
-        self.trigger_execution_time = config_get("trigger.execution_time", float)
+        self.trigger_frequency = config_get("capture.trigger_frequency", int)
+        self.trigger_delay = config_get("capture.delay", float)
+        self.trigger_execution_time = config_get("capture.execution_time", float)
 
         #demod
-        self.demod_select = config_get("demod.select", list)
-        self.demod_frequency = config_get("demod.frequency", int)
-        self.demod_bandpass_low = config_get("demod.bandpass_low", int)
-        self.demod_bandpass_high = config_get("demod.bandpass_high", int)
-        self.demod_decimation = config_get("demod.decimation", int)
+        self.demod_select = config_get("capture.demod", int)
+        self.demod_frequency = config_get("capture.demod_frequency", int)
+        self.demod_lowpass = config_get("capture.demod_lowpass", int)
+        self.demod_bandpass_low = config_get("capture.demod_bandpass_low", int)
+        self.demod_bandpass_high = config_get("capture.demod_bandpass_high", int)
 
         #stft
         self.stft = config_get("preprocess.stft", bool)
         self.stft_log = config_get("preprocess.stft_log", bool)
-        self.fft_len =  config_get("preprocess.fft_len", int)
-        self.fft_step =  config_get("preprocess.fft_step", int)
+        self.fft_len = config_get("preprocess.fft_len", int)
+        self.fft_step = config_get("preprocess.fft_step", int)
 
-        if self.demod_select[0] == 0:
-            self.demod_decimation = 1
-            self.frequency = self.capture_frequency
-        elif self.demod_select[0] == 1:
-            self.demod_decimation = 1
-            self.frequency = self.trigger_frequency
-        elif self.demod_select[0] == 2:
-            self.frequency = self.trigger_frequency
-        elif self.demod_select[0] == 3:
-            self.frequency = 0
+    #load config from file
+    def config_save(self):
+        config_reload()
+        #config
+        config_set("capture.center_frequency", self.center_frequency, int)
+        config_set("capture.samp_rate", self.capture_samp_rate, int)
+        config_set("capture.gain", self.capture_gain, int)
+        
+        self.offline = False
+        self.dump = False
 
-        self.samp_rate = self.capture_samp_rate / self.demod_decimation
-        self.demod_bandpass_high = min(self.samp_rate / 2,  self.demod_bandpass_high)
+        #trigger
+        config_set("capture.trigger_frequency", self.trigger_frequency, int)
+        config_set("capture.delay", self.trigger_delay, float)
+        config_set("capture.execution_time", self.trigger_execution_time, float)
 
-    #configure the top_block
-    def restart_tb(self):
-        if self.tb is not None:
-            log.debug("stop top_block")
-            self.tb.stop()
-            self.tb.wait()
-            del self.tb
+        #demod
+        config_set("capture.demod", self.demod_select, int)
+        config_set("capture.demod_frequency", self.demod_frequency, int)
+        config_set("capture.demod_lowpass", self.demod_lowpass, int)
+        config_set("capture.demod_bandpass_low", self.demod_bandpass_low, int)
+        config_set("capture.demod_bandpass_high", self.demod_bandpass_high, int)
 
-        if self.recv_p is not None:
-            log.debug("stop recv_thread")
-            self.recv_p.terminate()
+        #stft
+        config_set("preprocess.stft", self.stft, bool)
+        config_set("preprocess.stft_log", self.stft_log, bool)
+        config_set("preprocess.fft_len", self.fft_len, int)
+        config_set("preprocess.fft_step", self.fft_step, int)
 
-        self.config_reload()
 
-        #start recv_thread
-        self.queue = Queue(maxsize=1024)
-        self.recv_p = Process(target=self.read, args=(self.queue,))
-        self.recv_p.start()
-
-        #create top_block
-        top_block = imp.load_source("top_block", "grc/top_block.py")
-        tb = self.tb = top_block.top_block()
-        log.debug("top_lock created")
-
+    def tb_configure(self):
         #top_block config
-        tb.set_center_frequency(self.capture_frequency)
-        tb.set_samp_rate(self.capture_samp_rate)
-        tb.set_gain(self.capture_gain)
-        tb.set_trigger_frequency(self.trigger_frequency)
-        tb.set_trigger_low_pass(self.trigger_low_pass)
+        self.tb.set_center_frequency(self.center_frequency)
+        self.tb.set_samp_rate(self.capture_samp_rate)
+        self.tb.set_gain(self.capture_gain)
+        self.tb.set_trigger_frequency(self.trigger_frequency)
 
-        tb.set_selector_1_input(self.demod_select[0])
-        tb.set_selector_2_input(self.demod_select[1])
-        tb.set_selector_3_input(self.demod_select[2])
+        self.tb.set_demod_select(self.demod_select)
 
-        tb.set_demod_frequency(self.demod_frequency)
-        tb.set_demod_decimation(self.demod_decimation)
-        tb.set_demod_bandpass_high(self.demod_bandpass_high)
-        tb.set_demod_bandpass_low(self.demod_bandpass_low)
+        self.tb.set_demod_frequency(self.demod_frequency)
+        self.tb.set_demod_lowpass(self.demod_lowpass)
+        self.tb.set_demod_bandpass_high(self.demod_bandpass_high)
+        self.tb.set_demod_bandpass_low(self.demod_bandpass_low)
+
+        self.demod_decimation = self.tb.get_demod_decimation()
+        self.demod_samp_rate = self.tb.get_demod_samp_rate()
 
         #start top_block
-        self.tb.start()
-        log.debug( "top block running")
         time.sleep(1) #wait for filters to initialize
+
+    def tb_get(self):
+        #top_block config
+        self.center_frequency = self.tb.get_center_frequency()
+        self.capture_samp_rate = self.tb.get_samp_rate()
+        self.capture_gain = self.tb.get_gain()
+        self.trigger_frequency = self.tb.get_trigger_frequency()
+
+        self.demod_select = self.tb.get_demod_select()
+
+        self.demod_frequency = self.tb.get_demod_frequency()
+        self.demod_lowpass = self.tb.get_demod_lowpass()
+        self.demod_bandpass_high = self.tb.get_demod_bandpass_high()
+        self.demod_bandpass_low = self.tb.get_demod_bandpass_low()
+
+        self.demod_decimation = self.tb.get_demod_decimation()
+        self.demod_samp_rate = self.tb.get_demod_samp_rate()
 
     def configure_timig(self):
         t = time.time()
         self.dut.challenge(self.dut.test_value)
         self.trigger_execution_time = time.time() - t
         log.debug("dut execution time: %.2fms" % (self.trigger_execution_time * 1e3))
-        config_set("trigger.execution_time", self.trigger_execution_time, float)
+        config_set("capture.execution_time", self.trigger_execution_time, float)
         self.trigger_delay = 5 * self.trigger_execution_time
-        config_set("trigger.delay", self.trigger_delay, float)
+        config_set("capture.delay", self.trigger_delay, float)
         log.debug("using delay: %.2fms" % (self.trigger_delay * 1e3))
 
 
     def read(self, queue):
         log.debug("capture thread started")
 
-        demod = open( self.demod_fifo, "rb")
-        trig = open( self.trig_fifo, "rb")
+        demod = os.open( self.demod_fifo, os.O_RDONLY)
+        trig = os.open( self.trig_fifo, os.O_RDONLY)
         log.debug( "fifo open")
 
+        t = d = ""
         while True:
-            d = demod.read( 8*self.bufflen / self.demod_decimation)
-            t = trig.read( 4*self.bufflen / 100)
+            time.sleep(0.001)
 
-            if queue.full():
-                queue.get()
-            queue.put( (t,d))
+            #flush data
+            while True:
+                empty = True
+                readable,_,_ = select.select([demod], [], [], 0)
+                if readable:
+                    d = os.read(demod, int(self.bufflen))
+                    empty = False
+
+                readable,_,_ = select.select([trig], [], [], 0)
+                if readable:
+                    t = os.read(trig, int(self.bufflen))
+                    empty = False
+
+                if empty:
+                    break
+
+            #read
+            d_len = int(8*self.bufflen / self.demod_decimation)
+            t_len = int(4*self.bufflen / 100)
+            d = t = ""
+            while self.do_read:
+                time.sleep(0.001)
+                readable,_,_ = select.select([demod], [], [], 0)
+                if readable:
+                    d += os.read(demod, d_len)
+
+                readable,_,_ = select.select([trig], [], [], 0)
+                if readable:
+                    t += os.read(trig, t_len)
+
+                if queue.full():
+                    queue.get()
+                if len(d) > d_len and len(t) > t_len:
+                    queue.put( (t[:t_len],d[:d_len]))
+                    t = t[t_len:]
+                    d = d[d_len:]
 
     def capture(self, values=None, debug=False, count=10):
         # TODO Offline Traces (currently disabled)
@@ -198,6 +260,7 @@ class capture:
         log.debug( "challenge")
         #flush data from recv. queue
         while self.queue.qsize() > 0: self.queue.get()
+        self.do_read = True
 
         #trigger count challenge executions
         challenges = []
@@ -225,6 +288,7 @@ class capture:
             t,d = self.queue.get() 
             trig += t
             demod += d
+        self.do_read = False
 
         log.debug("converting %d and %d bytes" % (len(trig), len(demod)))
         trig = np.frombuffer(trig, dtype=np.dtype('f4'))
@@ -232,12 +296,14 @@ class capture:
         if debug:
             log.debug("drawing plot")
             plot(stft(demod, self.fft_len, self.fft_step),
-                    f0=self.frequency,
-                    samp_rate=self.samp_rate,
+                    f0=self.demod_frequency,
+                    samp_rate=self.demod_samp_rate,
                     fft_step=self.fft_step,
                     title="Raw Trace",
+                    png="/tmp/raw.png",
                     clear=True,
-                    blocking=True)
+                    blocking=True,
+                    show=False)
 
         return challenges, trig, demod
 
@@ -246,14 +312,14 @@ class capture:
         s = (s-s.mean(axis=0))# / s.std(axis=0)
         s = np.cumsum(s, axis=0)
 
-        width = int(self.trigger_execution_time * self.capture_samp_rate / self.fft_step) / 2
+        width = int(self.trigger_execution_time * self.demod_samp_rate / self.fft_step) / 2
 
         #use wavelets to search for count consecutive pulses
-        pulses = np.zeros((self.trigger_delay * self.samp_rate / self.fft_step, self.fft_len))
-        for offset in xrange(int(self.trigger_delay * self.samp_rate / self.fft_step)):
+        pulses = np.zeros((self.trigger_delay * self.demod_samp_rate / self.fft_step, self.fft_len))
+        for offset in xrange(int(self.trigger_delay * self.demod_samp_rate / self.fft_step)):
             p = np.zeros(self.fft_len)
             for i in xrange(10):
-                o = int(offset + (self.trigger_delay * i * self.capture_samp_rate / self.fft_step))
+                o = int(offset + (self.trigger_delay * i * self.demod_samp_rate / self.fft_step))
                 p += (s[o+width] - s[o]) + (s[o+3*width] - s[o+width]) - (s[o+4*width] - s[o+3*width])
 
             pulses[offset] = np.abs(p)
@@ -265,18 +331,21 @@ class capture:
         pulses = self.pulse_search(demod, count)
 
         b = np.unravel_index(pulses.argmax(), pulses.shape)[1]
-        trigger_frequency = stft_bin2f(b, self.capture_frequency, self.fft_len, self.samp_rate)
+        trigger_frequency = stft_bin2f(b, self.demod_frequency, self.fft_len, self.demod_samp_rate)
         self.trigger_frequency = trigger_frequency
-        config_set("trigger.frequency", trigger_frequency, float)
+        config_set("capture.trigger_frequency", trigger_frequency, float)
+        self.tb.set_trigger_frequency(self.trigger_frequency)
         log.debug("using trigger frequency %.3fMHz" % (trigger_frequency/1e6))
 
         plot(pulses,
             title="Multi Pulse Response",
             xlabel="Frequency in MHz",
             ylabel="Offset in ms",
-            f0=self.frequency,
-            samp_rate=self.samp_rate,
+            f0=self.demod_frequency,
+            samp_rate=self.demod_samp_rate,
             fft_step=self.fft_step,
+            show=False,
+            png="/tmp/multi_pulse.png"
         )
 
         return trigger_frequency
@@ -294,26 +363,30 @@ class capture:
     #use trigger signal to extract executions from trace
     def extract( self, trig, demod, count, debug=False):
         trig_decimation = 100
-        samp_rate = self.samp_rate
 
         if debug:
             plot(trig,
-                samp_rate=self.samp_rate*self.demod_decimation/trig_decimation, 
+                samp_rate=self.capture_samp_rate*self.demod_decimation/trig_decimation, 
                 ylabel="",
                 xlabel="Time in ms",
-                title="Trigger Signal")
+                title="Trigger Signal",
+                show=False,
+                png="/tmp/trig.png")
+                
 
         #compute wavelet width by execution time
-        width = int(self.trigger_execution_time * self.capture_samp_rate / trig_decimation) / 2
+        width = int(self.trigger_execution_time * self.demod_samp_rate / trig_decimation) / 2
             
         #slope search by haar transform
         haar = self.haar_transform(trig, width)
         if debug:
             plot(haar,
-                    samp_rate=self.samp_rate*self.demod_decimation/trig_decimation,
+                    samp_rate=self.capture_samp_rate*self.demod_decimation/trig_decimation,
                     title="Haar Transform",
                     xlabel="Time in ms",
-                    ylabel="Wavelet Response")
+                    ylabel="Wavelet Response",
+                    show=False,
+                    png="/tmp/haar.png")
 
         #extract slopes
         trigger = []
@@ -331,17 +404,18 @@ class capture:
                 self.trigger_execution_time += t
             self.trigger_execution_time /= count
             log.debug("dut execution time: %.2fms" % (self.trigger_execution_time * 1e3))
-            config_set("trigger.execution_time", self.trigger_execution_time, float)
+            config_set("capture.execution_time", self.trigger_execution_time, float)
 
         #extract traces
         traces = []
         for i in xrange(count):
             t = trigger[2*i]
-            start = int((t*trig_decimation/self.demod_decimation) - (self.trigger_execution_time*0.2*samp_rate))
-            stop  = int((t*trig_decimation/self.demod_decimation) + (self.trigger_execution_time*1.1*samp_rate))
+            start = int((t*trig_decimation/self.demod_decimation) - (self.trigger_execution_time*0.2*self.demod_samp_rate))
+            stop  = int((t*trig_decimation/self.demod_decimation) + (self.trigger_execution_time*1.2*self.demod_samp_rate))
             traces += [demod[start:stop]]
             
-        return traces[::-1]
+        return traces
+
 
     def mask(self, stft):
         f1 = config_get("preprocess.mask_f1", float)
@@ -372,7 +446,13 @@ class capture:
             s =  stft(s, self.fft_len, self.fft_step, log=self.stft_log)
 
             if debug:
-                plot(s, f0=cap.frequency, samp_rate=cap.samp_rate, fft_step=pre.fft_step, title="Aligned Trace")
+                plot(s,
+                        f0=cap.frequency,
+                        samp_rate=cap.samp_rate,
+                        fft_step=pre.fft_step,
+                        title="Aligned Trace",
+                        show=False,
+                        png="/tmp/aligned.png")
             if config_get("preprocess.mask", bool):
                 s = self.mask(s)
 
@@ -383,25 +463,47 @@ class capture:
         return s
 
 if __name__ == "__main__":
+    import readline
     cap = capture()
-
     cap.configure_timig()
 
-    challenges, trig, demod = cap.receive(debug=True)
-    cap.find_trigger_frequency(demod)
-    cap.restart_tb()
+    cmd = ""
+    while cmd not in ["q","quit"]:
+        cmd = raw_input("capture> ")
 
-    res = cap.capture(debug=True)
-    try:
-        for c, trace in res:
-            plot(stft(trace,cap.fft_len,cap.fft_step),
-                    f0=cap.frequency,
-                    samp_rate=cap.samp_rate,
-                    fft_step=cap.fft_step,
-                    title="Aligned Trace",
-                    clear=True,
-                    blocking=True)
-    except:
-        pass
+        if cmd == "trigger":
+            challenges, trig, demod = cap.receive(debug=True)
+            cap.find_trigger_frequency(demod)
 
+        if cmd == "capture":
+            cap.tb_get()
+            res = cap.capture(debug=True)
+            try:
+                i = 0
+                for c, trace in res:
+                    plot(stft(trace,cap.fft_len,cap.fft_step),
+                            f0=cap.demod_frequency,
+                            samp_rate=cap.demod_samp_rate,
+                            fft_step=cap.fft_step,
+                            title="Aligned Trace %d" % i,
+                            clear=True,
+                            blocking=True,
+                            show=False,
+                            png="/tmp/trace-%d" % i)
+                    i+=1
+            except:
+                import traceback; traceback.print_exc()
+                pass
+
+        if cmd == "save":
+            cap.tb_get()
+            cap.config_save()
+
+        if cmd == "help":
+            print "trigger         configure trigger frequency"
+            print "capture         capture traces"
+            print "save            save configuration"
+            print "quit            quit capture"
+
+    print "Done"
     os.kill(os.getpid(), 9)

@@ -34,12 +34,11 @@ class dut():
         self.connect()
 
     def apply_config(self):
-        global VALUES
         config_reload()
         self.cmd = config_get("misc.cmd", str)
         self.ip = config_get("misc.ip", str)
         self.port = config_get("misc.port", int)
-        self.test_value = VALUES[self.cmd]
+        self.test_value = n2hex(2**2048-1)
 
     def connect(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

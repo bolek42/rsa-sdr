@@ -29,5 +29,9 @@ class dut():
 
 if __name__ == "__main__":
     d = dut()
+    t = time.time()
     while True:
         d.challenge("0011223344556677")
+        if time.time() - t > 1:
+            time.sleep(2)
+            t = time.time()

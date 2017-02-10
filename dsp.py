@@ -51,18 +51,13 @@ def plot(   data,
             f0=0,
             blocking=True,
             clear=True,
+            show=True,
             png="/tmp/plot.png",
             npy="/tmp/plot",
             title="",
             xlabel="Frequency in MHz",
             ylabel="Time in ms",
             color='k'):
-
-    #arch show thread hack
-    global p
-    if p is not None:
-        p.terminate()
-        p.join()
 
     if clear:
         plt.clf()
@@ -110,17 +105,17 @@ def plot(   data,
 
     # dump
     if png != "":
-        plt.savefig(png,dpi=50)
+        plt.savefig(png,dpi=100)
 
     if npy != "":
         np.save(npy, data)
 
-    if blocking:
-        plt.show()
-        raw_input("press return to continue")
-    else:
-        plt.draw()
-        plt.pause(.1)
+    if show:
+        if blocking:
+            plt.show()
+            raw_input("press return to continue")
+        else:
+            plt.ion()
+            plt.draw()
+            plt.pause(.1)
 
-plt.ion()
-p = None
