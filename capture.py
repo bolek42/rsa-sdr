@@ -24,6 +24,7 @@ class capture:
         self.do_read = False
         self.config_reload()
         self.demod_decimation = 1
+        self.trig_decimation = 100
 
         if self.offline:
             self.files = glob.glob(self.tracedir + "/*.cfile")
@@ -33,7 +34,7 @@ class capture:
             self.demod_fifo = "/tmp/demod.fifo"
 
             log.debug( "creating fifo")
-            self.bufflen = 16000
+            self.bufflen = 1024
             try:
                 os.unlink(self.trig_fifo)
                 os.unlink(self.demod_fifo)
@@ -197,38 +198,35 @@ class capture:
         while True:
             time.sleep(0.001)
 
+            bufflen = 1024 * self.demod_decimation * self.trig_decimation
+            d_len = int(8*bufflen / self.demod_decimation)
+            t_len = int(4*bufflen / self.trig_decimation)
+            self.bufflen = bufflen
+
             #flush data
             while True:
                 empty = True
-                readable,_,_ = select.select([demod], [], [], 0)
+                readable,_,_ = select.select([demod,trig], [], [], 0)
                 if readable:
-                    d = os.read(demod, int(self.bufflen))
-                    empty = False
-
-                readable,_,_ = select.select([trig], [], [], 0)
-                if readable:
-                    t = os.read(trig, int(self.bufflen))
+                    d = os.read(demod, d_len)
+                    t = os.read(trig, t_len)
                     empty = False
 
                 if empty:
                     break
 
             #read
-            d_len = int(8*self.bufflen / self.demod_decimation)
-            t_len = int(4*self.bufflen / 100)
             d = t = ""
             while self.do_read:
                 time.sleep(0.001)
-                readable,_,_ = select.select([demod], [], [], 0)
+                readable,_,_ = select.select([demod, trig], [], [], 0)
                 if readable:
                     d += os.read(demod, d_len)
-
-                readable,_,_ = select.select([trig], [], [], 0)
-                if readable:
                     t += os.read(trig, t_len)
 
                 if queue.full():
                     queue.get()
+
                 if len(d) > d_len and len(t) > t_len:
                     queue.put( (t[:t_len],d[:d_len]))
                     t = t[t_len:]
@@ -281,7 +279,7 @@ class capture:
         log.debug( "response")
 
         #get samples from queue
-        t = (2+count) * self.trigger_delay #timespan of interest
+        t = (3+count) * self.trigger_delay #timespan of interest
         trig = ""
         demod = ""
         for i in xrange(int(self.capture_samp_rate * t / self.bufflen)):
@@ -302,8 +300,7 @@ class capture:
                     title="Raw Trace",
                     png="/tmp/raw.png",
                     clear=True,
-                    blocking=True,
-                    show=False)
+                    blocking=True)
 
         return challenges, trig, demod
 
@@ -315,7 +312,7 @@ class capture:
         width = int(self.trigger_execution_time * self.demod_samp_rate / self.fft_step) / 2
 
         #use wavelets to search for count consecutive pulses
-        pulses = np.zeros((self.trigger_delay * self.demod_samp_rate / self.fft_step, self.fft_len))
+        pulses = np.zeros((int(self.trigger_delay * self.demod_samp_rate / self.fft_step), self.fft_len))
         for offset in xrange(int(self.trigger_delay * self.demod_samp_rate / self.fft_step)):
             p = np.zeros(self.fft_len)
             for i in xrange(10):
@@ -344,7 +341,6 @@ class capture:
             f0=self.demod_frequency,
             samp_rate=self.demod_samp_rate,
             fft_step=self.fft_step,
-            show=False,
             png="/tmp/multi_pulse.png"
         )
 
@@ -362,7 +358,7 @@ class capture:
 
     #use trigger signal to extract executions from trace
     def extract( self, trig, demod, count, debug=False):
-        trig_decimation = 100
+        trig_decimation = self.trig_decimation
 
         if debug:
             plot(trig,
@@ -370,7 +366,6 @@ class capture:
                 ylabel="",
                 xlabel="Time in ms",
                 title="Trigger Signal",
-                show=False,
                 png="/tmp/trig.png")
                 
 
@@ -385,7 +380,6 @@ class capture:
                     title="Haar Transform",
                     xlabel="Time in ms",
                     ylabel="Wavelet Response",
-                    show=False,
                     png="/tmp/haar.png")
 
         #extract slopes
@@ -408,12 +402,13 @@ class capture:
 
         #extract traces
         traces = []
+        self.reference = None
         for i in xrange(count):
             t = trigger[2*i]
             start = int((t*trig_decimation/self.demod_decimation) - (self.trigger_execution_time*0.2*self.demod_samp_rate))
             stop  = int((t*trig_decimation/self.demod_decimation) + (self.trigger_execution_time*1.2*self.demod_samp_rate))
             traces += [demod[start:stop]]
-            
+
         return traces
 
 
@@ -451,7 +446,6 @@ class capture:
                         samp_rate=cap.samp_rate,
                         fft_step=pre.fft_step,
                         title="Aligned Trace",
-                        show=False,
                         png="/tmp/aligned.png")
             if config_get("preprocess.mask", bool):
                 s = self.mask(s)
@@ -475,6 +469,12 @@ if __name__ == "__main__":
             challenges, trig, demod = cap.receive(debug=True)
             cap.find_trigger_frequency(demod)
 
+        if cmd == "challenge":
+            for i in xrange(10):
+                print "challenge"
+                cap.dut.challenge(cap.dut.test_value)
+                time.sleep(0.03)
+
         if cmd == "capture":
             cap.tb_get()
             res = cap.capture(debug=True)
@@ -488,7 +488,6 @@ if __name__ == "__main__":
                             title="Aligned Trace %d" % i,
                             clear=True,
                             blocking=True,
-                            show=False,
                             png="/tmp/trace-%d" % i)
                     i+=1
             except:
@@ -500,10 +499,11 @@ if __name__ == "__main__":
             cap.config_save()
 
         if cmd == "help":
-            print "trigger         configure trigger frequency"
-            print "capture         capture traces"
-            print "save            save configuration"
-            print "quit            quit capture"
+            print "trigger          configure trigger frequency"
+            print "challenge        send challenge to dut"
+            print "capture          capture traces"
+            print "save             save configuration"
+            print "quit             quit capture"
 
     print "Done"
     os.kill(os.getpid(), 9)

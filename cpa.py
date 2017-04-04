@@ -166,6 +166,32 @@ def hamming_weight(x):
             hw += 1
         x = x >> 1
     return hw
+
+def des_test(plain, sbox):
+    p = des_ip(plain)
+    l = struct.unpack("<I", p[:4])[0]
+    r = struct.unpack("<I", p[4:])[0]
+
+    ll = ((l << 28) | (l >> 4)) & 0xffffffff
+
+    if sbox == 0:
+        x = (l  >> 24) & 0x3f
+    if sbox == 1:
+        x = (ll >> 24) & 0x3f
+    if sbox == 2:
+        x = (l  >> 16) & 0x3f
+    if sbox == 3:
+        x = (ll >> 16) & 0x3f
+    if sbox == 4:
+        x = (l  >>  8) & 0x3f
+    if sbox == 5:
+        x = (ll >>  8) & 0x3f
+    if sbox == 6:
+        x = (l       ) & 0x3f
+    if sbox == 7:
+        x = (ll      ) & 0x3f
+    
+    return hamming_weight(x)
     
 
 def des_predict(plain, sbox, k):
@@ -201,6 +227,9 @@ def des_rand_challenge(count):
         with open("/dev/urandom", "rb") as f:
             ret += [hexlify(f.read(8))]
         
+    #ret = []
+    #for i in xrange(count):
+    #    ret += [choice(["0000000000000000", "1111111111111111", "aaaaaaaaaaaaaaaa", "7777777777777777", "ffffffffffffffff"])]
     return ret
     
 import os
@@ -249,6 +278,7 @@ class cpa:
             Z = self.n*self.XY[i] - self.X*self.Y[i]
             N = np.sqrt(self.n*self.XX - self.X**2) * np.sqrt(self.n*self.YY[i] - self.Y[i]**2)
             ret += [Z/N]
+            np.save("%s/cpa-%d" % ("/tmp", i), Z/N)
 
         return ret
 
@@ -266,17 +296,26 @@ class cpa:
             #    f0=cap.demod_frequency,
             #    samp_rate=cap.demod_samp_rate,
             #    fft_step=128,
-            #    png="/tmp/cpa-%d.png" % i,
-            #    show=False)
+            #    png="/tmp/cpa-%d.png" % i)
 
         plot(np.array(self.trend),
             title="CFPA Trend run %d" % cpa.n,
             blocking=False,
-            show=False,
             png="/tmp/cpa-trend.png")
-            
+
+import glob
+import os
+def read_old_traces(path):
+    files = glob.glob(path)
+    shuffle(files)
+    for fname in files[:10]:
+        p,c,k = os.path.basename(fname).split("-")
+        with open(fname, "rb") as f:
+            data = f.read()
+            trace = np.frombuffer(data, dtype=np.dtype('f4'))
+
+        yield p, trace
         
-            
             
 if __name__ == "__main__":
     sbox = 0
@@ -286,7 +325,7 @@ if __name__ == "__main__":
     
     while True:
         for chal, trace in cap.capture(values=des_rand_challenge(count), count=count):
-            trace = stft(trace, 128, 32)
+            trace = stft(trace, 512, 128)
 
             #compute prediction
             #prediction = []
@@ -294,8 +333,9 @@ if __name__ == "__main__":
             #    p = des_predict(unhexlify(chal), sbox, k)
             #    prediction += [p]
             #cpa.add(trace, prediction)
-                
-            p = hamming_weight(struct.unpack("<Q", unhexlify(chal))[0])
+               
+            #p = hamming_weight(struct.unpack("<Q", unhexlify(chal))[0])
+            p = des_test(unhexlify(chal),0)
             cpa.add(trace, [p])
         #cpa.update_trend()
 
@@ -305,5 +345,5 @@ if __name__ == "__main__":
             f0=cap.demod_frequency,
             samp_rate=cap.demod_samp_rate,
             fft_step=128,
-            png="/tmp/cpa.png",
-            show=False)
+            png="/tmp/cpa.png",)
+

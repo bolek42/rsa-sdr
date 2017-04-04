@@ -136,7 +136,7 @@ class dpa:
                         blocking=False,
                         xlabel="Frequency in MHz",
                         ylabel="Time in ms",
-                        png="%s/%d.png" % (self.outdir,i), title=title, show=False)
+                        png="%s/%d.png" % (self.outdir,i), title=title)
             except Exception as e:
                 print traceback.format_exc()
 
