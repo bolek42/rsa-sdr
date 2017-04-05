@@ -106,6 +106,7 @@ def plot_process():
         elif len(data.shape) == 2:
             plt.xlabel(xlabel)
             plt.ylabel(ylabel)
+            plt.set_cmap("jet")
 
             if f0 > 0:
                 extent = [  (f0 - samp_rate/2)/1e6,

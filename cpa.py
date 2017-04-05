@@ -325,18 +325,20 @@ if __name__ == "__main__":
     
     while True:
         for chal, trace in cap.capture(values=des_rand_challenge(count), count=count):
-            trace = stft(trace, 512, 128)
+            s = stft(trace, 512, 64)
+            s = cap.static_alignment_stft(s)
+            sys.stderr.write(".")
 
             #compute prediction
             #prediction = []
             #for k in xrange(64):
             #    p = des_predict(unhexlify(chal), sbox, k)
             #    prediction += [p]
-            #cpa.add(trace, prediction)
+            #cpa.add(s, prediction)
                
             #p = hamming_weight(struct.unpack("<Q", unhexlify(chal))[0])
             p = des_test(unhexlify(chal),0)
-            cpa.add(trace, [p])
+            cpa.add(s, [p])
         #cpa.update_trend()
 
         plot(cpa.cpa()[0],

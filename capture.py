@@ -10,6 +10,7 @@ from multiprocessing import Process, Queue
 import threading
 import time
 import select
+from Queue import PriorityQueue
 
 from config import config_get, config_set, config_reload
 from dsp import *
@@ -21,6 +22,7 @@ class capture:
     def __init__(self):
         self.i = 0
         self.tb = None
+        self.reference = None
         self.do_read = False
         self.config_reload()
         self.demod_decimation = 1
@@ -402,14 +404,148 @@ class capture:
 
         #extract traces
         traces = []
-        self.reference = None
         for i in xrange(count):
             t = trigger[2*i]
-            start = int((t*trig_decimation/self.demod_decimation) - (self.trigger_execution_time*0.2*self.demod_samp_rate))
+            start = int((t*trig_decimation/self.demod_decimation) - (self.trigger_execution_time*0.3*self.demod_samp_rate))
             stop  = int((t*trig_decimation/self.demod_decimation) + (self.trigger_execution_time*1.2*self.demod_samp_rate))
-            traces += [demod[start:stop]]
+            trace = demod[start:stop]
+            traces += [trace]
 
         return traces
+
+    def static_alignment_stft(self, s, debug=False):
+        if self.reference is None:
+            self.reference = s
+            return s
+
+        #compute distance_matrix
+        cost = np.corrcoef(s, self.reference)
+        cost = 1-cost[:len(s),len(s):]
+        cost -= np.min(cost)
+
+        queue = PriorityQueue()
+        queue.put((0,(0,0)))
+
+        #compute offset
+        dist = []
+        offset_min, dist_min = 0,np.inf
+        for offset in xrange(-len(s)/4, len(s)/4):
+            d = 0
+            i = j = 0
+
+            #start
+            if offset > 0:
+                for i in xrange(offset):
+                    d += cost[i,j]
+            if offset < 0:
+                for j in xrange(-offset):
+                    d += cost[i,j]
+
+            #diagonal walk
+            while i < len(s)-1 and j < len(s)-1:
+                d += cost[i,j]
+                i,j = min(i+1,len(s)-1), min(j+1,len(s)-1)
+
+            #end
+            while i < len(s) - 1:
+                d += cost[i,j]
+                i = min(i+1,len(s)-1)
+
+            while j < len(s) - 1:
+                d += cost[i,j]
+                j = min(j+1,len(s)-1)
+
+            dist += [d]
+            if d < dist_min:
+                offset_min, dist_min = offset, d
+
+        if debug:
+            print "offset = %d" % offset_min
+            plot(np.array(dist))
+
+        #map
+        ret = [[]] * len(s)
+        i = j = 0
+        #start
+        if offset_min > 0:
+            for i in xrange(offset_min):
+                ret[j] = s[i]
+        if offset_min < 0:
+            for j in xrange(-offset_min):
+                ret[j] = s[i]
+
+        #diagonal walk
+        while i < len(s)-1 and j < len(s)-1:
+            ret[j] = s[i]
+            i,j = min(i+1,len(s)-1), min(j+1,len(s)-1)
+
+        #end
+        while i < len(s) - 1:
+            ret[j] = s[i]
+            i = min(i+1,len(s)-1)
+
+        while j < len(s) - 1:
+            ret[j] = s[i]
+            j = min(j+1,len(s)-1)
+        ret[-1] = s[-1]
+
+        return np.array(ret)
+
+    def elastic_alignment_stft(self, s, debug=False):
+        if self.reference is None:
+            self.reference = s
+            return s
+
+        #compute distance_matrix
+        cost = np.corrcoef(s, self.reference)
+        cost = 1-cost[:len(s),len(s):]
+        cost -= np.min(cost)
+
+        queue = PriorityQueue()
+        queue.put((0,(0,0)))
+
+        #dijkstra
+        dist = np.zeros(cost.shape) + np.inf
+        path = {}
+        while True:
+            d, p = queue.get()
+            i,j = p
+
+            if i == j == len(s) - 1:
+                break
+
+            if abs(i-j) > len(s)*0.2:
+                continue
+
+            for x,y in [(1,0),(0,1),(1,1)]:
+                if x+i >= len(s) or y+j >= len(s):
+                    continue
+
+                if d + cost[i+x,j+y] < dist[i+x,j+y]:
+                    path[(i+x,j+y)] = (i,j)
+                    dist[i+x,j+y] = d + cost[i+x,j+y]
+                    queue.put((d + cost[i+x,j+y], (i+x,j+y,)))
+
+        if debug:
+            i = j = len(s) - 1
+            while i != 0 or j != 0:
+                cost[i,j] = -1
+                i,j = path[(i,j)]
+                
+            cost[0,0] = -1
+            plot(cost)
+
+        #map
+        ret = [[]] * len(s)
+        i = j = len(s) - 1
+        while True:
+            ret[j] = s[i]
+            if i == 0 and j == 0:
+                break
+            i,j = path[(i,j)]
+
+        return np.array(ret)
+            
 
 
     def mask(self, stft):
@@ -439,6 +575,7 @@ class capture:
 
         if self.stft:
             s =  stft(s, self.fft_len, self.fft_step, log=self.stft_log)
+            s = self.static_alignment_stft(s)
 
             if debug:
                 plot(s,
@@ -468,6 +605,7 @@ if __name__ == "__main__":
         if cmd == "trigger":
             challenges, trig, demod = cap.receive(debug=True)
             cap.find_trigger_frequency(demod)
+            cap.reference = None
 
         if cmd == "challenge":
             for i in xrange(10):
@@ -481,7 +619,9 @@ if __name__ == "__main__":
             try:
                 i = 0
                 for c, trace in res:
-                    plot(stft(trace,cap.fft_len,cap.fft_step),
+                    s = stft(trace,cap.fft_len,cap.fft_step)
+                    s = cap.static_alignment_stft(s, debug=True)
+                    plot(   s,
                             f0=cap.demod_frequency,
                             samp_rate=cap.demod_samp_rate,
                             fft_step=cap.fft_step,
