@@ -19,10 +19,10 @@ class dut():
 
 
     def challenge(self, challenge):
-        self.serial.write(unhexlify(self.key))
         if len(unhexlify(challenge)) != 8:
             print "invalid plain text %s" % challenge
             sys.exit(1)
+        self.serial.write(unhexlify(self.key))
         self.serial.write(unhexlify(challenge))
         cipher = self.serial.read(8)
         return cipher

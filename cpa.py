@@ -140,24 +140,22 @@ sboxes = [
     0x00001040, 0x00040040, 0x10000000, 0x10041000],
 ]
 
-initial_permutation = [
-    57, 49, 41, 33, 25, 17, 9, 1,
-    59, 51, 43, 35, 27, 19, 11, 3,
-    61, 53, 45, 37, 29, 21, 13, 5,
-    63, 55, 47, 39, 31, 23, 15, 7,
-    56, 48, 40, 32, 24, 16,  8, 0,
-    58, 50, 42, 34, 26, 18, 10, 2,
-    60, 52, 44, 36, 28, 20, 12, 4,
-    62, 54, 46, 38, 30, 22, 14, 6]
-
 def des_ip(data):
-    data = struct.unpack("<Q", data)[0]
-    ret = 0x0
-    for i in xrange(64):
-        j = initial_permutation[i]
-        ret |= (((data >> i) & 0x1) << j)
+    l = struct.unpack(">I", data[:4])[0]
+    r = struct.unpack(">I", data[4:])[0]
 
-    return struct.pack("<Q", ret)
+    T = ((l >>  4) ^ r) & 0x0F0F0F0F; r ^= T; l ^= (T <<  4)
+    T = ((l >> 16) ^ r) & 0x0000FFFF; r ^= T; l ^= (T << 16)
+    T = ((r >>  2) ^ l) & 0x33333333; l ^= T; r ^= (T <<  2)
+    T = ((r >>  8) ^ l) & 0x00FF00FF; l ^= T; r ^= (T <<  8)
+    r = ((r << 1) | (r >> 31)) & 0xFFFFFFFF
+    T = (l ^ r) & 0xAAAAAAAA; r ^= T
+    l ^= T
+    l = ((l << 1) | (l >> 31)) & 0xFFFFFFFF
+
+    return l,r
+
+
 
 def hamming_weight(x):
     hw = 0
@@ -167,58 +165,32 @@ def hamming_weight(x):
         x = x >> 1
     return hw
 
-def des_test(plain, sbox):
-    p = des_ip(plain)
-    l = struct.unpack("<I", p[:4])[0]
-    r = struct.unpack("<I", p[4:])[0]
-
-    ll = ((l << 28) | (l >> 4)) & 0xffffffff
-
-    if sbox == 0:
-        x = (l  >> 24) & 0x3f
-    if sbox == 1:
-        x = (ll >> 24) & 0x3f
-    if sbox == 2:
-        x = (l  >> 16) & 0x3f
-    if sbox == 3:
-        x = (ll >> 16) & 0x3f
-    if sbox == 4:
-        x = (l  >>  8) & 0x3f
-    if sbox == 5:
-        x = (ll >>  8) & 0x3f
-    if sbox == 6:
-        x = (l       ) & 0x3f
-    if sbox == 7:
-        x = (ll      ) & 0x3f
-    
-    return hamming_weight(x)
-    
 
 def des_predict(plain, sbox, k):
-    p = des_ip(plain)
-    l = struct.unpack("<I", p[:4])[0]
-    r = struct.unpack("<I", p[4:])[0]
+    l,r = des_ip(plain)
 
-    ll = ((l << 28) | (l >> 4)) & 0xffffffff
+    rr = ((r << 28) | (r >> 4)) & 0xffffffff
 
     if sbox == 0:
-        x = sboxes[sbox][((l  >> 24) ^ k) & 0x3f]
+        x = sboxes[sbox][((rr >> 24) ^ k) & 0x3f]
     if sbox == 1:
-        x = sboxes[sbox][((ll >> 24) ^ k) & 0x3f]
+        x = sboxes[sbox][((r  >> 24) ^ k) & 0x3f]
     if sbox == 2:
-        x = sboxes[sbox][((l  >> 16) ^ k) & 0x3f]
+        x = sboxes[sbox][((rr >> 16) ^ k) & 0x3f]
     if sbox == 3:
-        x = sboxes[sbox][((ll >> 16) ^ k) & 0x3f]
+        x = sboxes[sbox][((r  >> 16) ^ k) & 0x3f]
     if sbox == 4:
-        x = sboxes[sbox][((l  >>  8) ^ k) & 0x3f]
+        x = sboxes[sbox][((rr >>  8) ^ k) & 0x3f]
     if sbox == 5:
-        x = sboxes[sbox][((ll >>  8) ^ k) & 0x3f]
+        x = sboxes[sbox][((r  >>  8) ^ k) & 0x3f]
     if sbox == 6:
-        x = sboxes[sbox][((l       ) ^ k) & 0x3f]
+        x = sboxes[sbox][((rr      ) ^ k) & 0x3f]
     if sbox == 7:
-        x = sboxes[sbox][((ll      ) ^ k) & 0x3f]
+        x = sboxes[sbox][((r       ) ^ k) & 0x3f]
     
     return hamming_weight(x)
+#des_predict("\xde\xad\xbe\xef\xde\xad\xbe\xef", 0, 2)
+#sys.exit(1)
 
 from random import *
 def des_rand_challenge(count):
@@ -303,6 +275,20 @@ class cpa:
             blocking=False,
             png="/tmp/cpa-trend.png")
 
+    def show(self):
+        if self.n < 2:
+            return
+
+        ret = []
+        res = self.cpa()
+        for i in xrange(len(res)):
+            ret += [np.max(res[i])]
+
+        plot(np.array(ret),
+            title="CFPA run %d" % cpa.n,
+            blocking=False,
+            png="/tmp/cpa.png")
+
 import glob
 import os
 def read_old_traces(path):
@@ -336,10 +322,10 @@ if __name__ == "__main__":
             #    prediction += [p]
             #cpa.add(s, prediction)
                
-            #p = hamming_weight(struct.unpack("<Q", unhexlify(chal))[0])
-            p = des_test(unhexlify(chal),0)
+            p = hamming_weight(struct.unpack("<Q", unhexlify(chal))[0])
+            #p = des_predict(unhexlify(chal),0, 27)
             cpa.add(s, [p])
-        #cpa.update_trend()
+        #cpa.show()
 
         plot(cpa.cpa()[0],
             blocking=False,

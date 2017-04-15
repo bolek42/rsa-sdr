@@ -127,9 +127,8 @@ def plot_process():
 
         if show:
             #plt.show()
-            #block_queue.put("")
             #raw_input("press return to continue")
-            plt.ion()
+            #plt.ion()
             plt.draw()
             plt.pause(.1)
 

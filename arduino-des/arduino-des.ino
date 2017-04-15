@@ -386,6 +386,6 @@ void loop()
 	Serial.readBytes(plain, 8);
 	digitalWrite(13, HIGH);
 	encrypt(cipher, plain, key);
-  digitalWrite(13, LOW);
+    digitalWrite(13, LOW);
 	Serial.write(cipher, 8);
 }

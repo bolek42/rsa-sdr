@@ -130,6 +130,7 @@ class capture:
         #demod
         config_set("capture.demod", self.demod_select, int)
         config_set("capture.demod_frequency", self.demod_frequency, int)
+        config_set("capture.demod_samp_rate", self.demod_samp_rate, int)
         config_set("capture.demod_lowpass", self.demod_lowpass, int)
         config_set("capture.demod_bandpass_low", self.demod_bandpass_low, int)
         config_set("capture.demod_bandpass_high", self.demod_bandpass_high, int)
@@ -416,6 +417,7 @@ class capture:
     def static_alignment_stft(self, s, debug=False):
         if self.reference is None:
             self.reference = s
+            np.save("/tmp/reference", s)
             return s
 
         #compute distance_matrix
