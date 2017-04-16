@@ -1,13 +1,14 @@
 import numpy as np
 import matplotlib
-import matplotlib.pyplot as plt
+import pylab as plt
 from multiprocessing import Process
+import threading
 import time
 
 # Fourier & Co.
 def stft(trace, fft_len=1024, fft_step=2048, n_fft=0, log=True):
     if n_fft == 0:
-        n_fft = np.ceil( (len(trace) - fft_len) / fft_step + 1)
+        n_fft = int(np.ceil( (len(trace) - fft_len) / fft_step + 1))
 
     # Verschiebe das Fenster ueber die Spur
     frames = np.lib.stride_tricks.as_strided(   trace, 
@@ -23,6 +24,7 @@ def stft(trace, fft_len=1024, fft_step=2048, n_fft=0, log=True):
     if log:
         stft = np.log10(stft)
 
+    stft[np.isnan(stft) | (stft == np.inf) | (stft == -np.inf)] = 0
     return stft
 
 def stft_bin2f(b, f0, fft_len, samp_rate):
@@ -43,6 +45,8 @@ def save(array, filename):
     except AttributeError:
         pass
 
+from multiprocessing import Process,Queue
+
 # graphing data
 def plot(   data,
             samp_rate=1,
@@ -50,6 +54,7 @@ def plot(   data,
             f0=0,
             blocking=True,
             clear=True,
+            show=True,
             png="/tmp/plot.png",
             npy="/tmp/plot",
             title="",
@@ -57,69 +62,78 @@ def plot(   data,
             ylabel="Time in ms",
             color='k'):
 
-    #arch show thread hack
-    global p
-    if p is not None:
-        p.terminate()
-        p.join()
+        global plot_queue
+        plot_queue.put((data,samp_rate,fft_step,f0,clear,show,png,npy,title,xlabel,ylabel,color))
 
-    if clear:
-        plt.clf()
+        if blocking:
+            raw_input("press return to continue")
 
-    if data is None:
-        return
+def plot_process():
+    while True:
+        global plot_queue
 
-    matplotlib.rcParams.update({'font.size': 18})
+        data,samp_rate,fft_step,f0,clear,show,png,npy,title,xlabel,ylabel,color  = plot_queue.get()
 
-    plt.title(title)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
+        if clear:
+            plt.clf()
 
-    #1D Graphs
-    if len(data.shape) == 1:
-        if samp_rate > 1:
-            if f0 > 0:
-                x = np.arange((f0 - samp_rate/2)/1e6,(f0 + samp_rate/2)/1e6, samp_rate/len(data)/1e6)
-            elif samp_rate > 1:
-                x = np.arange(0,len(data)) * 1e3 / samp_rate
-            else:
-                x = np.arange(0,len(data))
-            x = x[:len(data)]
-            plt.plot(x, data, color=color)
+        if data is None:
+            return
 
-            plt.xlabel(xlabel)
-            plt.ylabel(ylabel)
-        else:
-            plt.plot(data)
+        matplotlib.rcParams.update({'font.size': 18})
 
-    # 2D Plots (stft)
-    elif len(data.shape) == 2:
-        if f0 > 0:
-            extent = [  (f0 - samp_rate/2)/1e6,
-                        (f0 + samp_rate/2)/1e6,
-                        1e3 * len(data) * float(fft_step) / samp_rate,
-                        0]
-            im = plt.imshow(data,interpolation='bilinear', extent=extent, aspect='auto')
-        else:
-            im = plt.imshow(data,interpolation='bilinear', aspect='auto')
+        plt.title(title)
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
-        plt.colorbar(im)
 
-    # dump
-    if png != "":
-        plt.savefig(png,dpi=50)
+        #1D Graphs
+        if len(data.shape) == 1:
+            if samp_rate > 1:
+                if f0 > 0:
+                    x = np.arange((f0 - samp_rate/2)/1e6,(f0 + samp_rate/2)/1e6, samp_rate/len(data)/1e6)
+                elif samp_rate > 1:
+                    x = np.arange(0,len(data)) * 1e3 / samp_rate
+                else:
+                    x = np.arange(0,len(data))
+                x = x[:len(data)]
+                plt.plot(x, data, color=color)
 
-    if npy != "":
-        np.save(npy, data)
+                plt.xlabel(xlabel)
+                plt.ylabel(ylabel)
+            else:
+                plt.plot(data)
 
-    #arch show thread hack
-    if blocking:
-        plt.show()
-        raw_input("press return to continue")
-    else:
-        p = Process(target=plt.show,args=(True,))
-        p.start()
+        # 2D Plots (stft)
+        elif len(data.shape) == 2:
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel)
+            plt.set_cmap("jet")
 
-p = None
-plt.ion()
+            if f0 > 0:
+                extent = [  (f0 - samp_rate/2)/1e6,
+                            (f0 + samp_rate/2)/1e6,
+                            1e3 * len(data) * float(fft_step) / samp_rate,
+                            0]
+                im = plt.imshow(data,interpolation='bilinear', extent=extent, aspect='auto')
+            else:
+                im = plt.imshow(data,interpolation='bilinear', aspect='auto')
+            plt.colorbar(im)
+
+        # dump
+        if png != "":
+            plt.savefig(png,dpi=100)
+
+        if npy != "":
+            np.save(npy, data)
+
+        if show:
+            #plt.show()
+            #raw_input("press return to continue")
+            #plt.ion()
+            plt.draw()
+            plt.pause(.1)
+
+plot_queue = Queue()
+p = Process(target=plot_process)
+p.deamon = True
+p.start()

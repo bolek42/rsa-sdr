@@ -17,49 +17,15 @@ def n2hex(n, length=512):
     res = ("0"*(length - len(res))) + res
     return res
 
-# Database of known (and allowed) test programs including some DPA testcases
-VALUES = {  "./cprog/openssl-mul-4096":
-                #[ n2hex(getrandbits(4095)), n2hex(getrandbits(4095))],
-                [ n2hex(getrandbits(4095)), n2hex(2**4094+2**4094+2**4000)],
+# list of allowed programs and some test values
+PROGS = {  "./cprog/openssl-mul-4096": n2hex(getrandbits(4095)),
+            "./cprog/openssl-mul":  n2hex(getrandbits(2047)),
+            "./cprog/openssl-mul-mont": n2hex(getrandbits(2047)),
+            "./cprog/openssl-exp":  n2hex(getrandbits(2047)),
+            "./cprog/openssl-exp-4096":  n2hex(getrandbits(4095)),
+            "./cprog/openssl-exp-bin":  n2hex(getrandbits(2047)),
+            "./cprog/openssl-exp-bin-4096":  n2hex(getrandbits(4095)) }
 
-            "./cprog/openssl-mul":
-                #[ n2hex(getrandbits(2047)), n2hex(getrandbits(2047))],
-                [ n2hex(getrandbits(2047)), n2hex(2**2047+2**2046)],
-
-            "./cprog/openssl-mul-mont":
-                #[ n2hex(2**2047+2**2045), n2hex(2**2047+2**2046)],
-                [ n2hex(2**2047+2**2046+2**2045), n2hex(2**2047+2**2046)],
-            "./cprog/openssl-exp" :
-                #2^n
-                #[ n2hex(getrandbits(2046)), n2hex(2**2047)],
-                #[ n2hex(getrandbits(2046)), n2hex(getrandbits(2046))],
-
-                #reduction
-                #[   n2hex(2**2047 + 2**2042),
-                #    n2hex(2**2047 + 2**2041)],
-                [   n2hex(2**2047 + 2**2042),
-                    n2hex(2**2047 + 2**2046 + 2**2045 + 2**2044 + 2**2043)],
-
-                #both
-                #[   n2hex(2**2047 + 2**2046 + 2**2045 + 2**2044 + 2**2043 + getrandbits(2042)),
-                #    n2hex(2**2047 + 2**2046 + 2**2043 + getrandbits(2042))],#+ 2**2044)],
-                #[   n2hex(2**2047 + 2**2046 + 2**2045 + 2**2044 + 2**2043 + getrandbits(2042)),
-                #    n2hex(2**2047 + 2**2046 + 2**2045 + 2**2044 + 2**2043 + getrandbits(2042))],
-            "./cprog/openssl-exp-bin" :
-                #both
-                [   n2hex(2**2047 + 2**2046 + 2**2045 + 2**2044 + 2**2043 + getrandbits(2042)),
-                    n2hex(2**2047)],
-                #[   n2hex(2**2047 + 2**2046 + 2**2045 + 2**2044 + 2**2043 + getrandbits(2042)),
-                #    n2hex(2**2047 + 2**2046 + 2**2045 + 2**2044 + 2**2043 + getrandbits(2042))],
-
-            "./cprog/openssl-exp-4096" :
-                [   n2hex(2**4095 + 2**4094 + 2**4093 + 2**4092 + 2**4091 + getrandbits(4090)),
-                    n2hex(2**4095 + 2**4094)],
-
-            "./cprog/openssl-exp-bin-4096" :
-                [   n2hex(2**4095 + 2**4094 + 2**4093 + 2**4092 + 2**4091 + getrandbits(4090)),
-                    n2hex(2**4095)]
-        }
 
 # DUT client
 class dut():
@@ -68,12 +34,11 @@ class dut():
         self.connect()
 
     def apply_config(self):
-        global VALUES
         config_reload()
         self.cmd = config_get("misc.cmd", str)
         self.ip = config_get("misc.ip", str)
         self.port = config_get("misc.port", int)
-        self.values = VALUES[self.cmd]
+        self.test_value = n2hex(2**2048-1)
 
     def connect(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -88,7 +53,7 @@ class dut():
         self.s.send("%s %s" % (self.cmd, str(challenge)))
         response = self.s.recv(1024)
 
-# the DUT daemon class
+# DUT daemon
 class dut_service():
     def __init__(self):
         self.apply_config()
@@ -122,7 +87,6 @@ class dut_service():
     def work(self, challenge):
         cmd = challenge.split(" ")
         if cmd[0] in VALUES:
-            #print "calling: %s" % " ".join(cmd)
             subprocess.call(cmd)
 
         return "ok"

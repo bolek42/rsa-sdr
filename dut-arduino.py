@@ -1,31 +1,37 @@
 #!/usr/bin/env python
 
-import socket
+import sys
 import time
 import subprocess
 import serial #pyserial
 from random import getrandbits
-from config import config_get, config_reload
+from binascii import unhexlify
 
-from config import *
 import time
 
 class dut():
+    test_value = "0011223344556677"
+    key = "deadbeefdeadbeef"
+
     def __init__(self):
         self.serial = serial.Serial('/dev/ttyACM0', 115200)
-        self.values = ["\x00\x11\x22\x33\x44\x55\x66\x77"]
         time.sleep(1)
 
 
     def challenge(self, challenge):
-        self.serial.write("\xde\xad\xbe\xef\xde\xad\xbe\xef") #key
-        self.serial.write(challenge) #plain
+        if len(unhexlify(challenge)) != 8:
+            print "invalid plain text %s" % challenge
+            sys.exit(1)
+        self.serial.write(unhexlify(self.key))
+        self.serial.write(unhexlify(challenge))
         cipher = self.serial.read(8)
         return cipher
 
-    
-
 if __name__ == "__main__":
     d = dut()
+    t = time.time()
     while True:
-        d.challenge("\x00\x11\x22\x33\x44\x55\x66\x77")
+        d.challenge("0011223344556677")
+        if time.time() - t > 1:
+            time.sleep(2)
+            t = time.time()
