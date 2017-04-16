@@ -21,10 +21,14 @@ The file config/test.json will be created and all necessary parameter are stored
     python2 capture.py --config=config/test.json --dut=dut-openssl.py
 
 You can use the GUI  to configure the GNURadio frontend.
+
+![alt tag](https://raw.githubusercontent.com/bolek42/rsa-sdr/dev/doc/images/gui.jpeg)
+
 On the command prompt, the following commands are available:
 
 Command | Description
 --- | ---
+scan  | Scan Range for suitable trigger frequencies
 trigger | Configure trigger frequency
 capture | Capture traces
 save | Save configuration
@@ -102,8 +106,7 @@ By including this class, you could perform your own sidechannel analysis
 from capture import capture
 cap = capture()
 for challenge, trace in cap.capture(values=[val1, val2, ...]):
-    s = stft(trace, 512, 64)
-    ...
+    stft = cap.preprocess(trace)
 ```
 
 ## dpa.py

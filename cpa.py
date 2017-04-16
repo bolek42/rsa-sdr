@@ -286,6 +286,8 @@ class cpa:
 
         plot(np.array(ret),
             title="CFPA run %d" % cpa.n,
+            xlabel="Hypothesis",
+            ylabel="",
             blocking=False,
             png="/tmp/cpa.png")
 
@@ -316,22 +318,22 @@ if __name__ == "__main__":
             sys.stderr.write(".")
 
             #compute prediction
-            #prediction = []
-            #for k in xrange(64):
-            #    p = des_predict(unhexlify(chal), sbox, k)
-            #    prediction += [p]
-            #cpa.add(s, prediction)
+            prediction = []
+            for k in xrange(64):
+                p = des_predict(unhexlify(chal), sbox, k)
+                prediction += [p]
+            cpa.add(s, prediction)
                
-            p = hamming_weight(struct.unpack("<Q", unhexlify(chal))[0])
+            #p = hamming_weight(struct.unpack("<Q", unhexlify(chal))[0])
             #p = des_predict(unhexlify(chal),0, 27)
-            cpa.add(s, [p])
-        #cpa.show()
+            #cpa.add(s, [p])
+        cpa.show()
 
-        plot(cpa.cpa()[0],
-            blocking=False,
-            title="CFPA run %d" % cpa.n,
-            f0=cap.demod_frequency,
-            samp_rate=cap.demod_samp_rate,
-            fft_step=128,
-            png="/tmp/cpa.png",)
+        #plot(cpa.cpa()[0],
+        #    blocking=False,
+        #    title="CFPA run %d" % cpa.n,
+        #    f0=cap.demod_frequency,
+        #    samp_rate=cap.demod_samp_rate,
+        #    fft_step=128,
+        #    png="/tmp/cpa.png",)
 

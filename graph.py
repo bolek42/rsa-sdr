@@ -14,13 +14,12 @@ samp_rate = config_get("capture.demod_samp_rate", int)
 fft_len =  config_get("preprocess.fft_len", int)
 fft_step =  config_get("preprocess.fft_step", int)
 
-print args[0]
 res = np.load(args[0])
 plot(   res,
         f0=f0,
         samp_rate=samp_rate,
         fft_step=fft_step,
-        title="DES Mean Trace",
+        title="DES DPA",
         blocking=True,
         clear=False)
 

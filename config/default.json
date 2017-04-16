@@ -4,16 +4,16 @@
     "cmd" : "./cprog/openssl-exp",
     "ip" : "192.168.1.3",
     "port" : 5005,
-    "outdir" : "/tmp/out"
+    "outdir" : "/tmp"
   },
 
   "capture" : {
-    "center_frequency" : 146.5e6,
+    "center_frequency" : 126.5e6,
     "samp_rate" : 2e6,
     "gain" : 40,
     "trigger_frequency" : 0,
     "demod": 0,
-    "demod_frequency" : 146.896e6,
+    "demod_frequency" : 126.896e6,
     "demod_lowpass": 1e6,
     "demod_bandpass_low": 0.0,
     "demod_bandpass_high": 1.0,
@@ -27,12 +27,13 @@
     "stft_log" : true,
     "fft_len" : 512,
     "fft_step" : 128,
+    "static_alignmet": true,
 
     "mask": false,
-    "mask_f1": 0.00103,
-    "mask_f2": 0.0028,
-    "mask_t1": 0.405,
-    "mask_t2": 0.455
+    "mask_f1": 0.0,
+    "mask_f2": 0.0,
+    "mask_t1": 0.0,
+    "mask_t2": 0.0
 
   }
 }

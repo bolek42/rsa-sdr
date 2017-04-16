@@ -24,6 +24,7 @@ def stft(trace, fft_len=1024, fft_step=2048, n_fft=0, log=True):
     if log:
         stft = np.log10(stft)
 
+    stft[np.isnan(stft) | (stft == np.inf) | (stft == -np.inf)] = 0
     return stft
 
 def stft_bin2f(b, f0, fft_len, samp_rate):

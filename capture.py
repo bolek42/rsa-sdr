@@ -307,8 +307,8 @@ class capture:
 
         return challenges, trig, demod
 
-    def pulse_search(self, demod, count=10):
-        s = stft(demod, self.fft_len, self.fft_step)
+    def pulse_search(self, demod, count=10, log=True):
+        s = stft(demod, self.fft_len, self.fft_step, log=log)
         s = (s-s.mean(axis=0))# / s.std(axis=0)
         s = np.cumsum(s, axis=0)
 
@@ -576,8 +576,9 @@ class capture:
         s = trace
 
         if self.stft:
-            s =  stft(s, self.fft_len, self.fft_step, log=self.stft_log)
-            s = self.static_alignment_stft(s)
+            s = stft(s, self.fft_len, self.fft_step, log=self.stft_log)
+            if config_get("preprocess.static_alignmet", bool):
+                s = self.static_alignment_stft(s)
 
             if debug:
                 plot(s,
@@ -586,12 +587,9 @@ class capture:
                         fft_step=pre.fft_step,
                         title="Aligned Trace",
                         png="/tmp/aligned.png")
+
             if config_get("preprocess.mask", bool):
                 s = self.mask(s)
-
-        else:
-            s = np.abs(s)
-
 
         return s
 
@@ -603,6 +601,39 @@ if __name__ == "__main__":
     cmd = ""
     while cmd not in ["q","quit"]:
         cmd = raw_input("capture> ")
+
+        if cmd == "scan":
+            try:
+                f = int(raw_input("Start: "))
+                stop = int(raw_input("Stop: "))
+                f0 = f
+                sr = 0
+                ret = []
+                cap.tb.set_demod_select(0)
+                cap.tb.set_demod_decimation(1)
+                cap.tb.set_demod_lowpass(cap.capture_samp_rate/2)
+                while f < stop:
+                    cap.tb.set_center_frequency(f)
+                    challenges, trig, demod = cap.receive(debug=False, count=10)
+                    pulses = cap.pulse_search(demod, 10, log=False)
+                    ret += list(np.max(pulses, axis=0))
+
+                    plot(   np.array(ret),
+                            f0=f0,
+                            samp_rate=sr,
+                            fft_step=cap.fft_step,
+                            title="Trigger Scan",
+                            ylabel="Wavelet Response",
+                            clear=True,
+                            blocking=False,
+                            png="/tmp/trigger_scan.png")
+
+                    f += cap.capture_samp_rate
+                    sr += cap.capture_samp_rate
+                    f0 += cap.capture_samp_rate / 2
+            except:
+                import traceback; traceback.print_exc()
+            
 
         if cmd == "trigger":
             challenges, trig, demod = cap.receive(debug=True)
