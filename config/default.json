@@ -9,12 +9,13 @@
 
   "capture" : {
     "center_frequency" : 126.5e6,
-    "samp_rate" : 2e6,
+    "samp_rate" : 1250000,
     "gain" : 40,
     "trigger_frequency" : 0,
     "demod": 0,
-    "demod_frequency" : 126.896e6,
-    "demod_lowpass": 1e6,
+    "demod_frequency" : 126.5e6,
+    "demod_samp_rate" : 1250000,
+    "demod_lowpass": 625e3,
     "demod_bandpass_low": 0.0,
     "demod_bandpass_high": 1.0,
     "execution_time": 0.0,

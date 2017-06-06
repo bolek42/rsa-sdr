@@ -7,11 +7,14 @@ from capture import *
 from random import choice, randrange
 
 class dpa:
-    def __init__(self):
+    def __init__(self, cap=None):
         self.reset()
 
         self.apply_config()
-        self.cap = capture()
+        if cap is None:
+            self.cap = capture()
+        else:
+            self.cap = cap
 
     def reset(self):
         self.sigma = {}
@@ -80,7 +83,7 @@ class dpa:
         return d
 
     #this methods captures multiple traces and returns the DPA anlysis for the given Values
-    def oracle(self, runs=3000, values=None, verbose=True, reference=None, max_trace=0, count=30):
+    def oracle(self, runs=3000, values=None, verbose=True, reference=None, max_trace=0, count=30, show=True):
         #perform dpa attack for values
         dp = None
         i = 0
@@ -128,15 +131,16 @@ class dpa:
                 
                 dp = self.dpa(a,b,verbose=verbose)
 
-                title = "DPA run %d" % (i)
-                plot(   dp,
-                        f0=self.cap.demod_frequency,
-                        samp_rate=self.cap.demod_samp_rate,
-                        fft_step=self.cap.fft_step,
-                        blocking=False,
-                        xlabel="Frequency in MHz",
-                        ylabel="Time in ms",
-                        png="%s/%d.png" % (self.outdir,i), title=title)
+                if show:
+                    title = "DPA run %d" % (i)
+                    plot(   dp,
+                            f0=self.cap.demod_frequency,
+                            samp_rate=self.cap.demod_samp_rate,
+                            fft_step=self.cap.fft_step,
+                            blocking=False,
+                            xlabel="Frequency in MHz",
+                            ylabel="Time in ms",
+                            png="%s/%d.png" % (self.outdir,i), title=title)
             except Exception as e:
                 print traceback.format_exc()
 

@@ -24,6 +24,7 @@ class capture:
         self.tb = None
         self.reference = None
         self.do_read = False
+        self.acurate_timing = False
         self.config_reload()
         self.demod_decimation = 1
         self.trig_decimation = 100
@@ -113,7 +114,6 @@ class capture:
 
     #load config from file
     def config_save(self):
-        config_reload()
         #config
         config_set("capture.center_frequency", self.center_frequency, int)
         config_set("capture.samp_rate", self.capture_samp_rate, int)
@@ -179,6 +179,7 @@ class capture:
         self.demod_samp_rate = self.tb.get_demod_samp_rate()
 
     def configure_timig(self):
+        self.acurate_timing = False
         t = time.time()
         self.dut.challenge(self.dut.test_value)
         self.trigger_execution_time = time.time() - t
@@ -326,7 +327,8 @@ class capture:
         return pulses
 
 
-    def find_trigger_frequency(self, demod, count=10):
+    def find_trigger_frequency(self, demod, count=10, debug=False):
+        self.tb_get()
         pulses = self.pulse_search(demod, count)
 
         b = np.unravel_index(pulses.argmax(), pulses.shape)[1]
@@ -336,15 +338,16 @@ class capture:
         self.tb.set_trigger_frequency(self.trigger_frequency)
         log.debug("using trigger frequency %.3fMHz" % (trigger_frequency/1e6))
 
-        plot(pulses,
-            title="Multi Pulse Response",
-            xlabel="Frequency in MHz",
-            ylabel="Offset in ms",
-            f0=self.demod_frequency,
-            samp_rate=self.demod_samp_rate,
-            fft_step=self.fft_step,
-            png="/tmp/multi_pulse.png"
-        )
+        if debug:
+            plot(pulses,
+                title="Multi Pulse Response",
+                xlabel="Frequency in MHz",
+                ylabel="Offset in ms",
+                f0=self.demod_frequency,
+                samp_rate=self.demod_samp_rate,
+                fft_step=self.fft_step,
+                png="/tmp/multi_pulse.png"
+            )
 
         return trigger_frequency
 
@@ -392,7 +395,8 @@ class capture:
         trigger = sorted(trigger)
 
         #upate execution time
-        if debug:
+        if not self.acurate_timing:
+            self.acurate_timing = True
             self.trigger_execution_time = 0
             for i in xrange(count):
                 t = float(trigger[2*i+1] - trigger[2*i]) * trig_decimation / self.capture_samp_rate
@@ -590,90 +594,3 @@ class capture:
 
         return s
 
-if __name__ == "__main__":
-    import readline
-    cap = capture()
-    cap.configure_timig()
-
-    cmd = ""
-    while cmd not in ["q","quit"]:
-        cmd = raw_input("capture> ")
-
-        if cmd == "scan":
-            try:
-                f = int(raw_input("Start: "))
-                stop = int(raw_input("Stop: "))
-                f0 = f
-                sr = 0
-                ret = []
-                cap.tb.set_demod_select(0)
-                cap.tb.set_demod_decimation(1)
-                cap.tb.set_demod_lowpass(cap.capture_samp_rate/2)
-                while f < stop:
-                    cap.tb.set_center_frequency(f)
-                    challenges, trig, demod = cap.receive(debug=False, count=10)
-                    pulses = cap.pulse_search(demod, 10, log=False)
-                    ret += list(np.max(pulses, axis=0))
-
-                    plot(   np.array(ret),
-                            f0=f0,
-                            samp_rate=sr,
-                            fft_step=cap.fft_step,
-                            title="Trigger Scan",
-                            ylabel="Wavelet Response",
-                            clear=True,
-                            blocking=False,
-                            png="/tmp/trigger_scan.png")
-
-                    f += cap.capture_samp_rate
-                    sr += cap.capture_samp_rate
-                    f0 += cap.capture_samp_rate / 2
-            except:
-                import traceback; traceback.print_exc()
-            
-
-        if cmd == "trigger":
-            challenges, trig, demod = cap.receive(debug=True)
-            cap.find_trigger_frequency(demod)
-            cap.reference = None
-
-        if cmd == "challenge":
-            for i in xrange(10):
-                print "challenge"
-                cap.dut.challenge(cap.dut.test_value)
-                time.sleep(0.03)
-
-        if cmd == "capture":
-            cap.tb_get()
-            res = cap.capture(debug=True)
-            try:
-                i = 0
-                for c, trace in res:
-                    s = stft(trace,cap.fft_len,cap.fft_step)
-                    s = cap.static_alignment_stft(s, debug=True)
-                    plot(   s,
-                            f0=cap.demod_frequency,
-                            samp_rate=cap.demod_samp_rate,
-                            fft_step=cap.fft_step,
-                            title="Aligned Trace %d" % i,
-                            clear=True,
-                            blocking=True,
-                            png="/tmp/trace-%d" % i)
-                    i+=1
-            except:
-                import traceback; traceback.print_exc()
-                pass
-
-        if cmd == "save":
-            cap.tb_get()
-            cap.config_save()
-
-        if cmd == "help":
-            print "trigger          configure trigger frequency"
-            print "challenge        send challenge to dut"
-            print "capture          capture traces"
-            print "save             save configuration"
-            print "quit             quit capture"
-
-    print "Done"
-    os.kill(os.getpid(), 9)

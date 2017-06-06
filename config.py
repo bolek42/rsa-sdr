@@ -18,11 +18,21 @@ Capture:
     --capture-samp-rate=2e6          Capture sample rate
     --capture-gain=41                Capture gain
 """ % sys.argv[0]
+
 def usage():
     print _doc_
     sys.exit(1)
 
+def show_cfg(c=None, prefix=""):
+    if c is None:
+        c = cfg
 
+    for k in sorted(c.keys()):
+        if isinstance(c[k], dict):
+            show_cfg(c[k], "%s.%s" % (prefix, k))
+        else:
+            print "    %s" % ("%s.%s: %s" % (prefix, k, str(c[k])))[1:]
+        
 def config_get(keys, cast=None):
     global cfg
     res = cfg
@@ -37,17 +47,29 @@ def config_get(keys, cast=None):
 def config_set(key, value, cast=None):
     global cfg
 
-    if cast is not None:
-        value = cast(value)
 
     c = cfg
     for k in key.split(".")[:-1]:
         c = c[k]
 
+    v = c[key.split(".")[-1]]
+    if cast is not None:
+        value = cast(value)
+    elif isinstance(v, bool):
+        value = True if value.lower() == "true" else False
+    elif isinstance(v, int):
+        value = int(value)
+    elif isinstance(v, float):
+        value = float(value)
+
     c[key.split(".")[-1]] = value
 
     with open(config_file, "w") as f:
         f.write(json.dumps(cfg, indent=4))
+
+def set_config_file(cf):
+    global config_file
+    config_file = cf
 
 def config_reload():
     global cfg
