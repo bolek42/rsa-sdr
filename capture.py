@@ -141,7 +141,6 @@ class capture:
         config_set("preprocess.fft_len", self.fft_len, int)
         config_set("preprocess.fft_step", self.fft_step, int)
 
-
     def tb_configure(self):
         #top_block config
         self.tb.set_center_frequency(self.center_frequency)
@@ -349,7 +348,6 @@ class capture:
 
         return trigger_frequency
 
-
     #haar wavelet transform
     def haar_transform(self, trig, width):
         ret = np.zeros(len(trig))
@@ -463,7 +461,7 @@ class capture:
 
         if debug:
             print "offset = %d" % offset_min
-            plot(np.array(dist))
+            plot(np.array(dist),title="Static Alignment",xlabel="Offset", ylabel="Difference")
 
         #map
         ret = [[]] * len(s)
@@ -548,7 +546,6 @@ class capture:
 
         return np.array(ret)
             
-
 
     def mask(self, stft):
         f1 = config_get("preprocess.mask_f1", float)
